@@ -9,35 +9,35 @@ Genesis Lang features a powerful macro system inspired by Rust's `macro_rules!`.
 The macro system consists of four main phases:
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    MACRO EXPANSION PIPELINE                  │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  1. PATTERN MATCHING                                        │
-│     ┌─────────────┐     ┌─────────────┐                    │
-│     │ Invocation  │ ──► │   Matcher   │                    │
-│     │   Tokens    │     │             │                    │
-│     └─────────────┘     └──────┬──────┘                    │
-│                                │                            │
-│  2. CAPTURE BINDING            ▼                            │
-│     ┌─────────────────────────────────────┐                │
-│     │  Extract values: $x:expr, $n:ident  │                │
-│     │  Build bindings map                  │                │
-│     └──────────────────┬──────────────────┘                │
-│                        │                                    │
-│  3. TRANSCRIPTION      ▼                                    │
-│     ┌─────────────────────────────────────┐                │
-│     │  Substitute captures into template   │                │
-│     │  Expand repetitions                  │                │
-│     └──────────────────┬──────────────────┘                │
-│                        │                                    │
-│  4. TOKEN → AST        ▼                                    │
-│     ┌─────────────────────────────────────┐                │
-│     │  Convert expanded tokens to AST      │                │
-│     │  Ready for type checking             │                │
-│     └─────────────────────────────────────┘                │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────┐
+│               MACRO EXPANSION PIPELINE             │
+├────────────────────────────────────────────────────┤
+│                                                    │
+│  1. PATTERN MATCHING                               │
+│     ┌─────────────┐     ┌─────────────┐            │
+│     │ Invocation  │ ──► │   Matcher   │            │
+│     │   Tokens    │     │             │            │
+│     └─────────────┘     └──────┬──────┘            │
+│                                │                   │
+│  2. CAPTURE BINDING            ▼                   │
+│     ┌─────────────────────────────────────┐        │
+│     │  Extract values: $x:expr, $n:ident  │        │
+│     │  Build bindings map                 │        │
+│     └──────────────────┬──────────────────┘        │
+│                        │                           │
+│  3. TRANSCRIPTION      ▼                           │
+│     ┌─────────────────────────────────────┐        │
+│     │  Substitute captures into template  │        │
+│     │  Expand repetitions                 │        │
+│     └──────────────────┬──────────────────┘        │
+│                        │                           │
+│  4. TOKEN → AST        ▼                           │
+│     ┌─────────────────────────────────────┐        │
+│     │  Convert expanded tokens to AST     │        │
+│     │  Ready for type checking            │        │
+│     └─────────────────────────────────────┘        │
+│                                                    │
+└────────────────────────────────────────────────────┘
 ```
 
 ## Defining Macros
