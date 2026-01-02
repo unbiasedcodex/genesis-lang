@@ -1,0 +1,84 @@
+// Test all Vec<T> methods
+
+fn main() -> i32 {
+    // Create a new vector
+    let v = Vec::new()
+
+    // Test is_empty on empty vector - should be true (1)
+    let empty1 = Vec::is_empty(v)
+    println(empty1)  // Should print 1 (true)
+
+    // Push some elements
+    Vec::push(v, 10)
+    Vec::push(v, 20)
+    Vec::push(v, 30)
+
+    // Test is_empty on non-empty vector - should be false (0)
+    let empty2 = Vec::is_empty(v)
+    println(empty2)  // Should print 0 (false)
+
+    // Test len
+    let len = Vec::len(v)
+    println(len)  // Should print 3
+
+    // Test capacity (should be >= 3)
+    let cap = Vec::capacity(v)
+    println(cap)  // Should print 4 or more
+
+    // Test get
+    let first_get = Vec::get(v, 0)
+    println(first_get)  // Should print 10
+
+    // Test set - change element at index 1
+    Vec::set(v, 1, 25)
+    let modified = Vec::get(v, 1)
+    println(modified)  // Should print 25
+
+    // Test first
+    let first_opt = Vec::first(v)
+    let first_val = Option::unwrap(first_opt)
+    println(first_val)  // Should print 10
+
+    // Test last
+    let last_opt = Vec::last(v)
+    let last_val = Option::unwrap(last_opt)
+    println(last_val)  // Should print 30
+
+    // Test pop
+    let popped = Vec::pop(v)
+    let pop_val = Option::unwrap(popped)
+    println(pop_val)  // Should print 30
+
+    // Check len after pop
+    let len2 = Vec::len(v)
+    println(len2)  // Should print 2
+
+    // Pop remaining elements
+    Vec::pop(v)  // removes 25
+    Vec::pop(v)  // removes 10
+
+    // Pop from empty - should return None
+    let empty_pop = Vec::pop(v)
+    let is_none_pop = Option::is_none(empty_pop)
+    println(is_none_pop)  // Should print 1 (true)
+
+    // Test clear
+    Vec::push(v, 1)
+    Vec::push(v, 2)
+    Vec::push(v, 3)
+    Vec::clear(v)
+    let len3 = Vec::len(v)
+    println(len3)  // Should print 0
+
+    // Test first/last on empty
+    let first_empty = Vec::first(v)
+    let is_first_none = Option::is_none(first_empty)
+    println(is_first_none)  // Should print 1 (true)
+
+    let last_empty = Vec::last(v)
+    let is_last_none = Option::is_none(last_empty)
+    println(is_last_none)  // Should print 1 (true)
+
+    // Return 0 if all tests passed
+    0
+}

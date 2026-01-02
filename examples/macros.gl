@@ -1,0 +1,71 @@
+// Genesis Lang - Macro Examples
+//
+// This file demonstrates macro definition and invocation in Genesis.
+// Macros allow code generation and metaprogramming.
+
+// Define a simple macro that expands to a value
+macro_rules! answer {
+    () => {
+        42
+    };
+}
+
+// Define a macro with pattern matching
+macro_rules! greet {
+    () => {
+        println("Hello!")
+    };
+    ($name:expr) => {
+        println($name)
+    };
+}
+
+// Define a macro for creating a Vec (simplified)
+// Note: Full expansion not yet implemented, but parsing works
+macro_rules! my_vec {
+    () => {
+        Vec::new()
+    };
+    ($($x:expr),*) => {
+        {
+            let mut v = Vec::new();
+            $(v.push($x);)*
+            v
+        }
+    };
+}
+
+// Define an assertion macro
+macro_rules! my_assert {
+    ($cond:expr) => {
+        if !$cond {
+            panic!("assertion failed")
+        }
+    };
+    ($cond:expr, $msg:expr) => {
+        if !$cond {
+            panic!($msg)
+        }
+    };
+}
+
+fn main() -> i64 {
+    // User-defined macros are parsed but expansion is TODO
+    // For now, use the built-in functions directly:
+
+    println("=== Genesis Macro Demo ===")
+
+    // Built-in println works as a function
+    println("Testing macro definition parsing")
+    println("All macro_rules! definitions parsed successfully!")
+
+    // Macro definitions above show:
+    // 1. Simple patterns: () => { ... }
+    // 2. Expression captures: ($name:expr) => { ... }
+    // 3. Repetitions: ($($x:expr),*) => { ... }
+    // 4. Multiple rules per macro
+
+    // Return success
+    println("Macro syntax demo complete!")
+    0
+}

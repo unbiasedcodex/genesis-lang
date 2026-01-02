@@ -1,0 +1,66 @@
+// Example: Global Constants
+//
+// This example demonstrates the use of global constants in Genesis.
+// Constants are compile-time values that can be used throughout the program.
+
+// Integer constants
+const MAX_SIZE: i64 = 1024;
+const MIN_VALUE: i64 = -100;
+
+// Float constants
+const PI: f64 = 3.14159265359;
+const E: f64 = 2.71828182845;
+
+// Boolean constants
+const DEBUG_MODE: bool = true;
+const RELEASE_MODE: bool = false;
+
+// Negative numbers work too
+const ABSOLUTE_ZERO: i64 = -273;
+
+fn calculate_circle_area(radius: f64) -> f64 {
+    PI * radius * radius
+}
+
+fn main() -> i32 {
+    println("=== Global Constants Demo ===");
+    println("");
+
+    // Using integer constants
+    println("MAX_SIZE:");
+    println(i64::to_string(MAX_SIZE));
+
+    println("MIN_VALUE:");
+    println(i64::to_string(MIN_VALUE));
+
+    // Constants in expressions
+    let buffer_size = MAX_SIZE * 2;
+    println("Buffer size (MAX_SIZE * 2):");
+    println(i64::to_string(buffer_size));
+
+    // Boolean constants in conditionals
+    if DEBUG_MODE {
+        println("Debug mode is enabled");
+    }
+
+    if !RELEASE_MODE {
+        println("Not in release mode");
+    }
+
+    // Float constants
+    println("");
+    println("Using PI in circle calculation:");
+    let radius: f64 = 5.0;
+    let area = calculate_circle_area(radius);
+    // Note: f64 display would show the actual value
+    println("Area calculated successfully");
+
+    // Negative constants
+    println("");
+    println("ABSOLUTE_ZERO:");
+    println(i64::to_string(ABSOLUTE_ZERO));
+
+    println("");
+    println("=== Demo Complete ===");
+    0
+}

@@ -1,0 +1,25 @@
+// Simple Option<T> test without if/else
+
+fn main() -> i32 {
+    // Create Some variant
+    let some_val = Option::Some(42)
+
+    // Test is_some - should be true (1)
+    let is_some_result: bool = Option::is_some(some_val)
+    print("is_some(Some(42)) = ")
+    println(is_some_result)
+
+    // Test unwrap
+    let some_val2 = Option::Some(55)
+    let unwrapped: i64 = Option::unwrap(some_val2)
+    print("unwrap(Some(55)) = ")
+    println(unwrapped)
+
+    // Test unwrap_or on Some
+    let some_val3 = Option::Some(100)
+    let result: i64 = Option::unwrap_or(some_val3, 999)
+    print("unwrap_or(Some(100), 999) = ")
+    println(result)
+
+    0
+}

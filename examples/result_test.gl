@@ -1,0 +1,68 @@
+// Test Result<T, E> methods
+
+fn main() -> i32 {
+    println("=== Result<T, E> Tests ===")
+
+    // Test Ok variant
+    let ok_val = Result::Ok(42)
+
+    let is_ok_result: bool = Result::is_ok(ok_val)
+    if is_ok_result {
+        println("is_ok(Ok(42)): true - PASS")
+    } else {
+        println("is_ok(Ok(42)): false - FAIL")
+    }
+
+    let ok_val2 = Result::Ok(100)
+    let is_err_on_ok: bool = Result::is_err(ok_val2)
+    if is_err_on_ok {
+        println("is_err(Ok(100)): true - FAIL")
+    } else {
+        println("is_err(Ok(100)): false - PASS")
+    }
+
+    // Test Err variant
+    let err_val = Result::Err(500)
+
+    let is_err_result: bool = Result::is_err(err_val)
+    if is_err_result {
+        println("is_err(Err(500)): true - PASS")
+    } else {
+        println("is_err(Err(500)): false - FAIL")
+    }
+
+    let err_val2 = Result::Err(404)
+    let is_ok_on_err: bool = Result::is_ok(err_val2)
+    if is_ok_on_err {
+        println("is_ok(Err(404)): true - FAIL")
+    } else {
+        println("is_ok(Err(404)): false - PASS")
+    }
+
+    // Test unwrap on Ok
+    let ok_val3 = Result::Ok(77)
+    let unwrapped: i64 = Result::unwrap(ok_val3)
+    print("unwrap(Ok(77)) = ")
+    println(unwrapped)
+
+    // Test unwrap_or on Ok (should return 88)
+    let ok_val4 = Result::Ok(88)
+    let unwrap_or_ok: i64 = Result::unwrap_or(ok_val4, 999)
+    print("unwrap_or(Ok(88), 999) = ")
+    println(unwrap_or_ok)
+
+    // Test unwrap_or on Err (should return default 999)
+    let err_val3 = Result::Err(500)
+    let unwrap_or_err: i64 = Result::unwrap_or(err_val3, 999)
+    print("unwrap_or(Err(500), 999) = ")
+    println(unwrap_or_err)
+
+    // Test unwrap_err on Err
+    let err_val4 = Result::Err(123)
+    let err_value: i64 = Result::unwrap_err(err_val4)
+    print("unwrap_err(Err(123)) = ")
+    println(err_value)
+
+    println("=== All Result tests done ===")
+    0
+}

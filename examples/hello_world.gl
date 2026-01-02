@@ -1,0 +1,6 @@
+// Hello World in Genesis Lang!
+
+fn main() -> i32 {
+    println("Hello, World!")
+    0
+}

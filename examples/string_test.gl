@@ -1,0 +1,21 @@
+// Test String type
+
+fn main() -> i64 {
+    // Create string from literal
+    let s = String::from("Hello")
+
+    // Get length
+    let len = String::len(s)
+    println(len)  // Should print 5
+
+    // Create new empty string and push characters
+    let s2 = String::new()
+    String::push(s2, 72)   // 'H'
+    String::push(s2, 105)  // 'i'
+
+    let len2 = String::len(s2)
+    println(len2)  // Should print 2
+
+    // Return 0 if lengths are correct
+    len - 5 + len2 - 2
+}

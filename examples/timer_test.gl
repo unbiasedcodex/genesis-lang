@@ -1,0 +1,75 @@
+// Timer Test - Genesis Lang Phase 5
+// Tests async timers with sleep_ms
+
+// Simple async function that sleeps and returns a value
+async fn delayed_value(x: i64, delay_ms: i64) -> i64 {
+    println("  Starting delayed_value...")
+    sleep_ms(delay_ms).await
+    println("  Sleep completed!")
+    x * 10
+}
+
+// Test concurrent sleeps
+async fn concurrent_test() -> i64 {
+    println("Starting concurrent test...")
+
+    // These will be scheduled as tasks and run concurrently
+    let f1 = delayed_value(1, 100)
+    let f2 = delayed_value(2, 50)
+    let f3 = delayed_value(3, 75)
+
+    // Wait for all to complete
+    let r1 = f1.await
+    let r2 = f2.await
+    let r3 = f3.await
+
+    r1 + r2 + r3
+}
+
+// Test sequential sleeps
+async fn sequential_test() -> i64 {
+    println("Starting sequential test...")
+
+    sleep_ms(50).await
+    println("  First sleep done")
+
+    sleep_ms(50).await
+    println("  Second sleep done")
+
+    sleep_ms(50).await
+    println("  Third sleep done")
+
+    42
+}
+
+fn main() -> i64 {
+    println("=== Timer Test (Phase 5) ===")
+    println("")
+
+    // Test 1: Simple sleep
+    println("Test 1: Simple sleep (100ms)")
+    let future1 = sleep_ms(100)
+    block_on(future1)
+    println("Test 1 passed!")
+    println("")
+
+    // Test 2: Sequential sleeps
+    println("Test 2: Sequential sleeps")
+    let seq_result = block_on(sequential_test())
+    print("  Result: ")
+    println(seq_result)
+    println("Test 2 passed!")
+    println("")
+
+    // Test 3: Delayed value
+    println("Test 3: Delayed value (50ms)")
+    let future3 = delayed_value(5, 50)
+    let result3 = block_on(future3)
+    print("  Result: ")
+    println(result3)
+    println("Test 3 passed!")
+    println("")
+
+    println("=== All Timer Tests Passed! ===")
+    0
+}

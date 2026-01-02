@@ -1,0 +1,43 @@
+// ============================================================
+// Genesis Lang - Where Clauses Example
+// ============================================================
+// Demonstrates the where clause syntax for trait bounds
+// Example: Advanced type system features
+
+// -----------------------------
+// Function with where clause
+// -----------------------------
+fn identity<T>(x: T) -> T where T: Copy {
+    x
+}
+
+fn process_pair<T, U>(a: T, b: U) -> T where T: Copy, U: Copy {
+    a
+}
+
+// -----------------------------
+// Struct with where clause  
+// -----------------------------
+struct Container<T> where T: Copy {
+    value: T,
+}
+
+// -----------------------------
+// Main function
+// -----------------------------
+fn main() {
+    // Using function with where clause
+    let x: i64 = 42;
+    let y = identity(x);
+    println(y);
+    
+    // Using struct with where clause
+    let c = Container { value: 100 };
+    println(c.value);
+    
+    // Using function with multiple bounds
+    let a: i64 = 10;
+    let b: i64 = 20;
+    let result = process_pair(a, b);
+    println(result);
+}

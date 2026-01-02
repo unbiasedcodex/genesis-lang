@@ -1,0 +1,12 @@
+// Simple Box test - return value directly
+
+fn main() -> i32 {
+    // Allocate 42 on the heap
+    let boxed = Box::new(42)
+
+    // Dereference and get value
+    let value = *boxed
+
+    // Return
+    value
+}

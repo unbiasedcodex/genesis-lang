@@ -1,0 +1,79 @@
+// Channel Test - Genesis Lang (Async Phase 6)
+// Tests channel-based communication
+
+fn main() -> i64 {
+    println("Testing channels (Phase 6)...")
+
+    // Test 1: Create a channel with capacity 4
+    println("Test 1: Creating channel...")
+    let ch: Channel<i64> = channel(4)
+    let sender: Sender<i64> = Channel::sender(ch)
+    let receiver: Receiver<i64> = Channel::receiver(ch)
+    println("Channel created!")
+
+    // Test 2: Send values
+    println("Test 2: Testing try_send...")
+    let sent1: i64 = Sender::try_send(sender, 10)
+    if sent1 == 1 {
+        println("Sent 10 successfully")
+    } else {
+        println("Failed to send 10")
+    }
+
+    let sent2: i64 = Sender::try_send(sender, 20)
+    if sent2 == 1 {
+        println("Sent 20 successfully")
+    } else {
+        println("Failed to send 20")
+    }
+
+    let sent3: i64 = Sender::try_send(sender, 30)
+    if sent3 == 1 {
+        println("Sent 30 successfully")
+    } else {
+        println("Failed to send 30")
+    }
+
+    // Test 3: Receive values
+    println("Test 3: Testing try_recv...")
+    let opt1: Option<i64> = Receiver::try_recv(receiver)
+    match opt1 {
+        Some(val) => {
+            print("Received: ")
+            println(val)
+        }
+        None => println("No value (unexpected)")
+    }
+
+    let opt2: Option<i64> = Receiver::try_recv(receiver)
+    match opt2 {
+        Some(val) => {
+            print("Received: ")
+            println(val)
+        }
+        None => println("No value (unexpected)")
+    }
+
+    let opt3: Option<i64> = Receiver::try_recv(receiver)
+    match opt3 {
+        Some(val) => {
+            print("Received: ")
+            println(val)
+        }
+        None => println("No value (unexpected)")
+    }
+
+    // Test 4: Try to receive from empty channel
+    println("Test 4: Testing try_recv on empty channel...")
+    let opt_empty: Option<i64> = Receiver::try_recv(receiver)
+    match opt_empty {
+        Some(val) => {
+            print("Unexpected value: ")
+            println(val)
+        }
+        None => println("Got None as expected (channel empty)")
+    }
+
+    println("All channel tests passed!")
+    0
+}

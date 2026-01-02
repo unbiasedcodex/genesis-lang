@@ -1,0 +1,25 @@
+// Test Dir::list element access
+fn main() -> i64 {
+    let result = Dir::list("/tmp");
+
+    if Result::is_ok(result) {
+        let entries = Result::unwrap(result);
+        let count = Vec::len(entries);
+        println("Count:");
+        println(count);
+
+        // Print first 5 elements
+        let i = 0;
+        while i < 5 {
+            if i < count {
+                let name = Vec::get(entries, i);
+                println(name);
+            }
+            i = i + 1;
+        }
+        0
+    } else {
+        println("Failed");
+        1
+    }
+}

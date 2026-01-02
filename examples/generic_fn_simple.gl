@@ -1,0 +1,10 @@
+// Test: Simple Generic Function
+
+fn identity<T>(x: T) -> T {
+    x
+}
+
+fn main() -> i64 {
+    let a = identity(42)
+    a
+}

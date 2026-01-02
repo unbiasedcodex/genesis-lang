@@ -1,0 +1,149 @@
+// HashSet test - testing all HashSet methods
+
+fn main() -> i64 {
+    println("=== HashSet<i64> Test ===")
+
+    // Create a new HashSet
+    let set: HashSet<i64> = HashSet::new()
+
+    // Test is_empty on new set
+    if HashSet::is_empty(set) {
+        println("New set is empty: PASS")
+    } else {
+        println("New set is empty: FAIL")
+    }
+
+    // Test insert
+    HashSet::insert(set, 10)
+    HashSet::insert(set, 20)
+    HashSet::insert(set, 30)
+
+    // Test len
+    let len = HashSet::len(set)
+    print("Length after 3 inserts: ")
+    println(len)
+    if len == 3 {
+        println("Length check: PASS")
+    } else {
+        println("Length check: FAIL")
+    }
+
+    // Test contains
+    if HashSet::contains(set, 20) {
+        println("Contains 20: PASS")
+    } else {
+        println("Contains 20: FAIL")
+    }
+
+    if HashSet::contains(set, 99) {
+        println("Contains 99: FAIL (should not contain)")
+    } else {
+        println("Not contains 99: PASS")
+    }
+
+    // Test duplicate insert (should not increase length)
+    HashSet::insert(set, 20)
+    let len2 = HashSet::len(set)
+    if len2 == 3 {
+        println("Duplicate insert ignored: PASS")
+    } else {
+        print("Duplicate insert: FAIL (len=")
+        print(len2)
+        println(")")
+    }
+
+    // Test remove
+    HashSet::remove(set, 20)
+    if HashSet::contains(set, 20) {
+        println("Remove 20: FAIL")
+    } else {
+        println("Remove 20: PASS")
+    }
+
+    let len3 = HashSet::len(set)
+    if len3 == 2 {
+        println("Length after remove: PASS")
+    } else {
+        println("Length after remove: FAIL")
+    }
+
+    // Test capacity
+    let cap = HashSet::capacity(set)
+    print("Capacity: ")
+    println(cap)
+    if cap >= 16 {
+        println("Capacity check: PASS")
+    } else {
+        println("Capacity check: FAIL")
+    }
+
+    // Test clear
+    HashSet::clear(set)
+    if HashSet::is_empty(set) {
+        println("Clear: PASS")
+    } else {
+        println("Clear: FAIL")
+    }
+
+    println("")
+    println("=== HashSet<String> Test ===")
+
+    // Test with String keys
+    let str_set: HashSet<String> = HashSet::new()
+
+    let key1 = String::from("hello")
+    let key2 = String::from("world")
+    let key3 = String::from("genesis")
+
+    HashSet::insert(str_set, key1)
+    HashSet::insert(str_set, key2)
+    HashSet::insert(str_set, key3)
+
+    let str_len = HashSet::len(str_set)
+    print("String set length: ")
+    println(str_len)
+
+    // Test contains with String
+    let check1 = String::from("hello")
+    if HashSet::contains(str_set, check1) {
+        println("Contains 'hello': PASS")
+    } else {
+        println("Contains 'hello': FAIL")
+    }
+
+    let check2 = String::from("missing")
+    if HashSet::contains(str_set, check2) {
+        println("Contains 'missing': FAIL")
+    } else {
+        println("Not contains 'missing': PASS")
+    }
+
+    // Test remove with String
+    let remove_key = String::from("world")
+    HashSet::remove(str_set, remove_key)
+
+    let check3 = String::from("world")
+    if HashSet::contains(str_set, check3) {
+        println("Remove 'world': FAIL")
+    } else {
+        println("Remove 'world': PASS")
+    }
+
+    println("")
+    println("=== HashSet with_capacity Test ===")
+
+    let big_set: HashSet<i64> = HashSet::with_capacity(100)
+    let big_cap = HashSet::capacity(big_set)
+    print("Requested capacity 100, got: ")
+    println(big_cap)
+    if big_cap >= 100 {
+        println("with_capacity: PASS")
+    } else {
+        println("with_capacity: FAIL")
+    }
+
+    println("")
+    println("=== All HashSet tests completed! ===")
+
+    0
+}

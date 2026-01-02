@@ -1,0 +1,8 @@
+// Test with sleep 0
+fn main() -> i64 {
+    println("Before")
+    let f = sleep_ms(0)
+    block_on(f)
+    println("After")
+    0
+}

@@ -1,0 +1,137 @@
+// Test HashMap<K, V> methods
+
+fn main() -> i32 {
+    // Create empty HashMap
+    let map: HashMap<i64, i64> = HashMap::new()
+    println("Created HashMap::new()")
+
+    // Test is_empty on new map
+    let empty: bool = HashMap::is_empty(map)
+    if empty {
+        println("is_empty(new map): true - PASS")
+    } else {
+        println("is_empty(new map): false - FAIL")
+    }
+
+    // Test len on empty map
+    let len0: i64 = HashMap::len(map)
+    print("len(empty map) = ")
+    println(len0)
+
+    // Test capacity
+    let cap: i64 = HashMap::capacity(map)
+    print("capacity = ")
+    println(cap)
+
+    // Insert some values
+    println("Inserting key=1, value=100")
+    HashMap::insert(map, 1, 100)
+
+    println("Inserting key=2, value=200")
+    HashMap::insert(map, 2, 200)
+
+    println("Inserting key=3, value=300")
+    HashMap::insert(map, 3, 300)
+
+    // Test len after inserts
+    let len3: i64 = HashMap::len(map)
+    print("len after 3 inserts = ")
+    println(len3)
+
+    // Test is_empty after inserts
+    let empty2: bool = HashMap::is_empty(map)
+    if empty2 {
+        println("is_empty after inserts: true - FAIL")
+    } else {
+        println("is_empty after inserts: false - PASS")
+    }
+
+    // Test contains_key
+    let has1: bool = HashMap::contains_key(map, 1)
+    if has1 {
+        println("contains_key(1): true - PASS")
+    } else {
+        println("contains_key(1): false - FAIL")
+    }
+
+    let has99: bool = HashMap::contains_key(map, 99)
+    if has99 {
+        println("contains_key(99): true - FAIL")
+    } else {
+        println("contains_key(99): false - PASS")
+    }
+
+    // Test get
+    let val1 = HashMap::get(map, 1)
+    let v1: i64 = Option::unwrap_or(val1, -1)
+    print("get(1) = ")
+    println(v1)
+
+    let val2 = HashMap::get(map, 2)
+    let v2: i64 = Option::unwrap_or(val2, -1)
+    print("get(2) = ")
+    println(v2)
+
+    let val99 = HashMap::get(map, 99)
+    let v99: i64 = Option::unwrap_or(val99, -1)
+    print("get(99) = ")
+    println(v99)
+
+    // Test insert update (same key)
+    println("Inserting key=1, value=111 (update)")
+    HashMap::insert(map, 1, 111)
+    let updated = HashMap::get(map, 1)
+    let vu: i64 = Option::unwrap_or(updated, -1)
+    print("get(1) after update = ")
+    println(vu)
+
+    // Len should still be 3
+    let len3b: i64 = HashMap::len(map)
+    print("len after update = ")
+    println(len3b)
+
+    // Test remove
+    println("Removing key=2")
+    let removed = HashMap::remove(map, 2)
+    let rv: i64 = Option::unwrap_or(removed, -999)
+    print("removed value = ")
+    println(rv)
+
+    // Len should be 2 now
+    let len2: i64 = HashMap::len(map)
+    print("len after remove = ")
+    println(len2)
+
+    // contains_key(2) should be false now
+    let has2: bool = HashMap::contains_key(map, 2)
+    if has2 {
+        println("contains_key(2) after remove: true - FAIL")
+    } else {
+        println("contains_key(2) after remove: false - PASS")
+    }
+
+    // Test clear
+    println("Clearing map")
+    HashMap::clear(map)
+
+    let len_after_clear: i64 = HashMap::len(map)
+    print("len after clear = ")
+    println(len_after_clear)
+
+    let empty_after_clear: bool = HashMap::is_empty(map)
+    if empty_after_clear {
+        println("is_empty after clear: true - PASS")
+    } else {
+        println("is_empty after clear: false - FAIL")
+    }
+
+    // Test with_capacity
+    println("Creating HashMap::with_capacity(100)")
+    let map2: HashMap<i64, i64> = HashMap::with_capacity(100)
+    let cap2: i64 = HashMap::capacity(map2)
+    print("capacity of map2 = ")
+    println(cap2)
+
+    println("All tests completed!")
+    0
+}

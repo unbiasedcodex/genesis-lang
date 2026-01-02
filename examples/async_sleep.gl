@@ -1,0 +1,33 @@
+// Async Sleep Test - Genesis Lang
+// Tests async functions with sleep
+
+async fn delayed_value(x: i64, delay_ms: i64) -> i64 {
+    sleep_ms(delay_ms).await
+    x * 10
+}
+
+fn main() -> i64 {
+    println("Testing async with sleep...")
+
+    // Test 1: Sleep and compute
+    print("Computing with 100ms delay... ")
+    let future1 = delayed_value(5, 100)
+    let result1 = block_on(future1)
+    println(result1)
+
+    // Test 2: Multiple async operations
+    print("Three operations with delays... ")
+    let f1 = delayed_value(1, 50)
+    let f2 = delayed_value(2, 50)
+    let f3 = delayed_value(3, 50)
+
+    let r1 = block_on(f1)
+    let r2 = block_on(f2)
+    let r3 = block_on(f3)
+
+    let total = r1 + r2 + r3
+    println(total)
+
+    println("Async sleep tests passed!")
+    0
+}

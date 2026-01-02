@@ -1,0 +1,13 @@
+// Test println with explicitly typed float variable
+
+fn main() -> i64 {
+    println("=== Explicit Float Test ===");
+
+    // Explicitly typed variable
+    let y: f64 = 2.5;
+    println("y =");
+    println(y);
+
+    println("=== Done ===");
+    0
+}

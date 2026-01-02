@@ -1,0 +1,45 @@
+// Test Option<T> methods with if/else
+
+fn main() -> i32 {
+    // Create Some variant
+    let some_val = Option::Some(42)
+
+    // Test is_some with if/else
+    let is_some_result: bool = Option::is_some(some_val)
+    if is_some_result {
+        println("is_some(Some(42)): true - PASS")
+    } else {
+        println("is_some(Some(42)): false - FAIL")
+    }
+
+    // Test is_none with if/else
+    let some_val2 = Option::Some(100)
+    let is_none_result: bool = Option::is_none(some_val2)
+    if is_none_result {
+        println("is_none(Some(100)): true - FAIL")
+    } else {
+        println("is_none(Some(100)): false - PASS")
+    }
+
+    // Test None
+    let none_val = Option::None
+    let is_none_on_none: bool = Option::is_none(none_val)
+    if is_none_on_none {
+        println("is_none(None): true - PASS")
+    } else {
+        println("is_none(None): false - FAIL")
+    }
+
+    // Test unwrap_or
+    let some_val3 = Option::Some(55)
+    let unwrapped: i64 = Option::unwrap_or(some_val3, 999)
+    print("unwrap_or(Some(55), 999) = ")
+    println(unwrapped)
+
+    let none_val2 = Option::None
+    let default_result: i64 = Option::unwrap_or(none_val2, 123)
+    print("unwrap_or(None, 123) = ")
+    println(default_result)
+
+    0
+}

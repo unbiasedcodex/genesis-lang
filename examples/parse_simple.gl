@@ -1,0 +1,45 @@
+// Simple parse test - just unwrap_or
+
+fn main() -> i64 {
+    println("=== Simple Parse Test ===")
+
+    // Test 1: Parse valid positive integer
+    let s1 = String::from("42")
+    let r1 = i64::parse(s1)
+    let n1 = Result::unwrap_or(r1, -1)
+    print("parse(\"42\") = ")
+    println(n1)
+
+    // Test 2: Parse valid negative integer
+    let s2 = String::from("-123")
+    let r2 = i64::parse(s2)
+    let n2 = Result::unwrap_or(r2, -1)
+    print("parse(\"-123\") = ")
+    println(n2)
+
+    // Test 3: Parse zero
+    let s3 = String::from("0")
+    let r3 = i64::parse(s3)
+    let n3 = Result::unwrap_or(r3, -1)
+    print("parse(\"0\") = ")
+    println(n3)
+
+    // Test 4: Parse invalid - should get -1
+    let s4 = String::from("abc")
+    let r4 = i64::parse(s4)
+    let n4 = Result::unwrap_or(r4, -1)
+    print("parse(\"abc\") = ")
+    println(n4)
+
+    // Test 5: Arithmetic with parsed value
+    let s5 = String::from("10")
+    let r5 = i64::parse(s5)
+    let n5 = Result::unwrap_or(r5, 0)
+    print("parse(\"10\") * 5 = ")
+    println(n5 * 5)
+
+    println("=== Done ===")
+
+    // Return 0 if test 1 passed, 1 otherwise
+    if n1 == 42 { 0 } else { 1 }
+}

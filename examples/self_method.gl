@@ -1,0 +1,36 @@
+// ============================================================
+// Genesis Lang - Self::method() Calls Example
+// ============================================================
+// Demonstrates using Self to refer to the implementing type
+// Example: Advanced type system features
+
+// Self::method() allows referring to the implementing type's methods
+// inside impl blocks without repeating the type name.
+
+// Type checking examples (comments show what Self:: resolves to):
+//
+// struct Counter { value: i64 }
+// impl Counter {
+//     fn create(v: i64) -> Counter { ... }
+//     fn doubled(self) -> Counter {
+//         Self::create(self.value * 2)  // -> Counter::create
+//     }
+// }
+
+// Using Option as an example of Self-like method calls
+fn main() {
+    // Option methods work like Self::method() internally
+    let x: Option<i64> = Option::Some(42);
+    let y: Option<i64> = Option::None;
+
+    // These calls demonstrate the pattern:
+    // Option::is_some, Option::unwrap, etc.
+    if Option::is_some(x) {
+        println(Option::unwrap(x));  // 42
+    }
+
+    let default_val = Option::unwrap_or(y, 100);
+    println(default_val);  // 100
+
+    println(0);  // Success marker
+}

@@ -1,0 +1,75 @@
+// Test Vec::iter() - iterate over vector elements
+
+fn main() -> i32 {
+    println("=== Vec::iter() Test ===")
+
+    // Create a vector with some elements
+    let v: Vec<i64> = Vec::new()
+    Vec::push(v, 10)
+    Vec::push(v, 20)
+    Vec::push(v, 30)
+    Vec::push(v, 40)
+    Vec::push(v, 50)
+
+    println("Vector contents:")
+
+    // Test 1: Iterate using Vec::iter()
+    let sum: i64 = 0
+    for x in Vec::iter(v) {
+        print("  Element: ")
+        println(x)
+        sum = sum + x
+    }
+
+    print("Sum: ")
+    println(sum)
+
+    if sum == 150 {
+        println("Sum check: PASS")
+    } else {
+        println("Sum check: FAIL")
+        return 1
+    }
+
+    // Test 2: Iterate over empty vector
+    println("Testing empty vector:")
+    let empty: Vec<i64> = Vec::new()
+    let count: i64 = 0
+    for x in Vec::iter(empty) {
+        count = count + 1
+    }
+
+    if count == 0 {
+        println("Empty vec iteration: PASS")
+    } else {
+        println("Empty vec iteration: FAIL")
+        return 2
+    }
+
+    // Test 3: Iterate and modify (accumulate)
+    println("Testing accumulation:")
+    let numbers: Vec<i64> = Vec::new()
+    Vec::push(numbers, 1)
+    Vec::push(numbers, 2)
+    Vec::push(numbers, 3)
+    Vec::push(numbers, 4)
+    Vec::push(numbers, 5)
+
+    let product: i64 = 1
+    for n in Vec::iter(numbers) {
+        product = product * n
+    }
+
+    print("Product of 1-5: ")
+    println(product)
+
+    if product == 120 {
+        println("Product check: PASS")
+    } else {
+        println("Product check: FAIL")
+        return 3
+    }
+
+    println("=== All Vec::iter() tests passed! ===")
+    0
+}

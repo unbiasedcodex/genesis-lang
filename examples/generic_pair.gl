@@ -1,0 +1,14 @@
+// Test: Pair struct with two generic parameters
+
+struct Pair<A, B> {
+    first: A,
+    second: B
+}
+
+fn main() -> i64 {
+    // Create Pair<i64, i64>
+    let p = Pair { first: 10, second: 20 }
+
+    // Access and return
+    p.first + p.second
+}

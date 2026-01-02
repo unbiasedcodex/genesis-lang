@@ -1,0 +1,23 @@
+// Test: Generic Functions with Monomorphization
+
+fn identity<T>(x: T) -> T {
+    x
+}
+
+fn double<T>(x: T, y: T) -> T {
+    x
+}
+
+fn main() -> i64 {
+    // Call identity with i64
+    let a = identity(42)
+
+    // Call identity with bool (different instantiation)
+    let b = identity(true)
+
+    // Call double with i64
+    let c = double(10, 20)
+
+    // Return sum (a + c should be 42 + 10 = 52)
+    a + c
+}

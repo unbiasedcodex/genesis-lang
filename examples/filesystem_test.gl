@@ -1,0 +1,127 @@
+// Genesis Lang Filesystem Module Test
+// Tests the extended filesystem operations
+
+fn main() -> i64 {
+    println("=== Genesis Filesystem Module Test ===")
+
+    // Test File::exists
+    println("\n1. Testing File::exists:")
+    let exists_root = File::exists("/")
+    if exists_root {
+        println("  / exists: true (correct)")
+    } else {
+        println("  / exists: false (ERROR)")
+    }
+
+    let exists_fake = File::exists("/nonexistent_file_xyz")
+    if exists_fake {
+        println("  /nonexistent_file_xyz exists: true (ERROR)")
+    } else {
+        println("  /nonexistent_file_xyz exists: false (correct)")
+    }
+
+    // Test File::is_dir
+    println("\n2. Testing File::is_dir:")
+    let is_dir_root = File::is_dir("/")
+    if is_dir_root {
+        println("  / is directory: true (correct)")
+    } else {
+        println("  / is directory: false (ERROR)")
+    }
+
+    let is_dir_etc = File::is_dir("/etc")
+    if is_dir_etc {
+        println("  /etc is directory: true (correct)")
+    } else {
+        println("  /etc is directory: false (ERROR)")
+    }
+
+    // Test File::is_file
+    println("\n3. Testing File::is_file:")
+    let is_file_passwd = File::is_file("/etc/passwd")
+    if is_file_passwd {
+        println("  /etc/passwd is file: true (correct)")
+    } else {
+        println("  /etc/passwd is file: false (may vary)")
+    }
+
+    let is_file_etc = File::is_file("/etc")
+    if is_file_etc {
+        println("  /etc is file: true (ERROR)")
+    } else {
+        println("  /etc is file: false (correct)")
+    }
+
+    // Test File::size
+    println("\n4. Testing File::size:")
+    let size_result = File::size("/etc/passwd")
+    match size_result {
+        Result::Ok(size) => {
+            println("  /etc/passwd size: ")
+            println(size)
+        },
+        Result::Err(_) => {
+            println("  /etc/passwd size: error reading")
+        }
+    }
+
+    // Test Dir::create and Dir::remove
+    println("\n5. Testing Dir::create and Dir::remove:")
+    let create_result = Dir::create("/tmp/genesis_test_dir")
+    match create_result {
+        Result::Ok(_) => {
+            println("  Created /tmp/genesis_test_dir: success")
+
+            // Verify it exists
+            let exists = File::exists("/tmp/genesis_test_dir")
+            if exists {
+                println("  Verified directory exists: true")
+            } else {
+                println("  Verified directory exists: false (ERROR)")
+            }
+
+            // Remove it
+            let remove_result = Dir::remove("/tmp/genesis_test_dir")
+            match remove_result {
+                Result::Ok(_) => {
+                    println("  Removed /tmp/genesis_test_dir: success")
+                },
+                Result::Err(_) => {
+                    println("  Removed /tmp/genesis_test_dir: error")
+                }
+            }
+        },
+        Result::Err(_) => {
+            println("  Created /tmp/genesis_test_dir: error (may already exist)")
+        }
+    }
+
+    // Test Dir::create_all
+    println("\n6. Testing Dir::create_all:")
+    let create_all_result = Dir::create_all("/tmp/genesis_test/nested/dirs")
+    match create_all_result {
+        Result::Ok(_) => {
+            println("  Created /tmp/genesis_test/nested/dirs: success")
+
+            // Verify it exists
+            let exists2 = File::is_dir("/tmp/genesis_test/nested/dirs")
+            if exists2 {
+                println("  Verified nested dir exists: true")
+            } else {
+                println("  Verified nested dir exists: false")
+            }
+
+            // Clean up - each call must be handled separately
+            let r1 = Dir::remove("/tmp/genesis_test/nested/dirs")
+            let r2 = Dir::remove("/tmp/genesis_test/nested")
+            let r3 = Dir::remove("/tmp/genesis_test")
+            println("  Cleaned up test directories")
+        },
+        Result::Err(_) => {
+            println("  Created /tmp/genesis_test/nested/dirs: error")
+        }
+    }
+
+    println("\n=== Tests Complete ===")
+    0
+}

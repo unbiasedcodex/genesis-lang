@@ -1,0 +1,42 @@
+// Test Dir::list without printing elements
+fn main() -> i64 {
+    let test_dir = "/tmp/genesis_test_dir";
+
+    // Clean up first
+    File::remove("/tmp/genesis_test_dir/a.txt");
+    Dir::remove(test_dir);
+
+    // Create test directory
+    Dir::create(test_dir);
+
+    // Create test file
+    let f1 = File::create("/tmp/genesis_test_dir/a.txt");
+    if Result::is_ok(f1) {
+        File::close(Result::unwrap(f1));
+    }
+
+    let result = Dir::list(test_dir);
+
+    if Result::is_ok(result) {
+        let entries = Result::unwrap(result);
+        let count = Vec::len(entries);
+        println("Count:");
+        println(count);
+
+        // Try to get element but don't print it
+        if count > 0 {
+            let _elem = Vec::get(entries, 0);
+            println("Got element without error");
+        }
+    } else {
+        println("Failed");
+        return 1;
+    }
+
+    // Cleanup
+    File::remove("/tmp/genesis_test_dir/a.txt");
+    Dir::remove(test_dir);
+
+    println("Done");
+    0
+}

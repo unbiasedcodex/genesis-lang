@@ -1,0 +1,6 @@
+// Simple String test
+
+fn main() -> i64 {
+    let s = String::from("hello")
+    String::len(s)
+}

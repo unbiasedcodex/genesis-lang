@@ -1,0 +1,24 @@
+// Minimal test for Dir::list
+fn main() -> i64 {
+    let test_dir = "/tmp/genesis_test_dir";
+
+    // Create test directory
+    Dir::create(test_dir);
+
+    let result = Dir::list(test_dir);
+
+    if Result::is_ok(result) {
+        let entries = Result::unwrap(result);
+        let count = Vec::len(entries);
+        println("Count:");
+        println(count);
+    } else {
+        println("Failed");
+        return 1;
+    }
+
+    // Cleanup
+    Dir::remove(test_dir);
+
+    0
+}

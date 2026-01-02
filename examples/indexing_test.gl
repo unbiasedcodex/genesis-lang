@@ -1,0 +1,47 @@
+// Test indexing for Vec and String
+
+fn main() -> i64 {
+    println("=== Vec/String Indexing Tests ===")
+
+    // Test Vec indexing
+    let v: Vec<i64> = Vec::with_capacity(10)
+    Vec::push(v, 10)
+    Vec::push(v, 20)
+    Vec::push(v, 30)
+
+    print("Vec: [")
+    print(v[0])
+    print(", ")
+    print(v[1])
+    print(", ")
+    print(v[2])
+    println("]")
+
+    // Test String indexing
+    let s: String = String::from("Hello")
+    print("String 'Hello' bytes: [")
+    print(s[0])  // H = 72
+    print(", ")
+    print(s[1])  // e = 101
+    print(", ")
+    print(s[2])  // l = 108
+    print(", ")
+    print(s[3])  // l = 108
+    print(", ")
+    print(s[4])  // o = 111
+    println("]")
+
+    // Verify specific values
+    print("s[0] = ")
+    print(s[0])
+    print(" (expected 72 for 'H')")
+    println("")
+
+    print("v[1] = ")
+    print(v[1])
+    print(" (expected 20)")
+    println("")
+
+    println("=== All indexing tests done ===")
+    0
+}

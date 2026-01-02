@@ -1,0 +1,13 @@
+// Timer Debug Test
+fn main() -> i64 {
+    println("Step 1: Starting...")
+
+    println("Step 2: About to create sleep future...")
+    let future = sleep_ms(50)
+
+    println("Step 3: Future created, about to call block_on...")
+    block_on(future)
+
+    println("Step 4: block_on completed!")
+    0
+}

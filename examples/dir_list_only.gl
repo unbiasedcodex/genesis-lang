@@ -1,0 +1,15 @@
+// Only Dir::list
+fn main() -> i64 {
+    let result = Dir::list("/tmp");
+
+    if Result::is_ok(result) {
+        let entries = Result::unwrap(result);
+        let count = Vec::len(entries);
+        println("Count:");
+        println(count);
+        0
+    } else {
+        println("Failed");
+        1
+    }
+}

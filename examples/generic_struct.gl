@@ -1,0 +1,30 @@
+// Test: Generic Struct with Monomorphization
+// This tests that generic structs are properly specialized
+
+struct Wrapper<T> {
+    value: T
+}
+
+struct Pair<A, B> {
+    first: A,
+    second: B
+}
+
+fn main() -> i64 {
+    // Create Wrapper<i64> - should be monomorphized to Wrapper$i64
+    let w1 = Wrapper { value: 42 }
+
+    // Create Pair<i64, i64> - should be monomorphized to Pair$i64$i64
+    let p1 = Pair { first: 10, second: 20 }
+
+    // Access fields
+    let v = w1.value
+    let sum = p1.first + p1.second
+
+    // Print results
+    println(i64::to_string(v))
+    println(i64::to_string(sum))
+
+    // Return for verification
+    v + sum  // Should be 42 + 30 = 72
+}

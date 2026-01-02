@@ -1,0 +1,41 @@
+// Test for join! combinator
+// join! polls all futures and waits for all to complete
+
+async fn task_a() -> i64 {
+    println("  task_a starting");
+    sleep_ms(10);
+    println("  task_a done");
+    10
+}
+
+async fn task_b() -> i64 {
+    println("  task_b starting");
+    sleep_ms(20);
+    println("  task_b done");
+    20
+}
+
+async fn task_c() -> i64 {
+    println("  task_c starting");
+    sleep_ms(5);
+    println("  task_c done");
+    5
+}
+
+fn main() {
+    println("=== Testing join! combinator ===");
+
+    // Test 1: join two futures
+    println("Test 1: join!(task_a(), task_b())");
+    let results = join!(task_a(), task_b());
+    println("Both tasks completed!");
+
+    // Test 2: join three futures
+    println("");
+    println("Test 2: join!(task_a(), task_b(), task_c())");
+    let results3 = join!(task_a(), task_b(), task_c());
+    println("All three tasks completed!");
+
+    println("");
+    println("=== join! tests complete ===");
+}

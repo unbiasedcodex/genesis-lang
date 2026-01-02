@@ -1,0 +1,6 @@
+// No Sleep Test
+fn main() -> i64 {
+    println("Starting without sleep...")
+    println("Done!")
+    0
+}

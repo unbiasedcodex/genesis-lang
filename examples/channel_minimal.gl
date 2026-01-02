@@ -1,0 +1,21 @@
+// Minimal Channel Test - Genesis Lang (Async Phase 6)
+// Tests channel with try_send
+
+fn main() -> i64 {
+    println("Creating channel...")
+    let ch: Channel<i64> = channel(4)
+    let sender: Sender<i64> = Channel::sender(ch)
+
+    println("Sending 42...")
+    let sent: i64 = Sender::try_send(sender, 42)
+    println("After send")
+
+    if sent == 1 {
+        println("Send succeeded!")
+    } else {
+        println("Send failed!")
+    }
+
+    println("Done!")
+    0
+}

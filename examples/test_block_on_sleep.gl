@@ -1,0 +1,9 @@
+// Test block_on with sleep
+fn main() -> i64 {
+    println("Before block_on")
+    let f = sleep_ms(50)
+    println("After sleep_ms, before block_on")
+    block_on(f)
+    println("After block_on")
+    0
+}

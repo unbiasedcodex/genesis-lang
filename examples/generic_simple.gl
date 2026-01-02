@@ -1,0 +1,9 @@
+// Test: Simple Generic Struct
+struct Wrapper<T> {
+    value: T
+}
+
+fn main() -> i64 {
+    let w = Wrapper { value: 42 }
+    w.value
+}

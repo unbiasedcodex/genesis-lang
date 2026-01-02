@@ -1,0 +1,75 @@
+// Test trait implementation
+
+trait Speak {
+    fn speak(&self) -> i64
+}
+
+trait Walk {
+    fn walk(&self) -> i64
+}
+
+struct Dog {
+    name: i64,
+}
+
+struct Cat {
+    lives: i64,
+}
+
+// Implement Speak for Dog
+impl Speak for Dog {
+    fn speak(&self) -> i64 {
+        println("Dog says: Woof!")
+        1
+    }
+}
+
+// Implement Walk for Dog
+impl Walk for Dog {
+    fn walk(&self) -> i64 {
+        println("Dog walks on 4 legs")
+        4
+    }
+}
+
+// Implement Speak for Cat
+impl Speak for Cat {
+    fn speak(&self) -> i64 {
+        println("Cat says: Meow!")
+        2
+    }
+}
+
+// Inherent impl for Dog
+impl Dog {
+    fn get_name(&self) -> i64 {
+        self.name
+    }
+}
+
+fn main() -> i64 {
+    println("=== Trait Test ===")
+
+    let dog = Dog { name: 42 }
+    let cat = Cat { lives: 9 }
+
+    // Call trait methods
+    let bark = dog.speak()
+    let walk = dog.walk()
+    let meow = cat.speak()
+
+    // Call inherent method
+    let name = dog.get_name()
+
+    print("Dog name: ")
+    println(name)
+    print("Results: bark=")
+    print(bark)
+    print(", walk=")
+    print(walk)
+    print(", meow=")
+    println(meow)
+
+    println("=== Trait Test Passed! ===")
+    0
+}

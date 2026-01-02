@@ -1,0 +1,54 @@
+// Test for select! combinator
+// select! polls multiple futures and returns when the first one completes
+
+async fn slow_task() -> i64 {
+    sleep_ms(100);
+    42
+}
+
+async fn fast_task() -> i64 {
+    sleep_ms(10);
+    100
+}
+
+async fn instant_task() -> i64 {
+    1
+}
+
+fn main() {
+    println("=== Testing select! combinator ===");
+
+    // Test 1: select between instant and slow task
+    // instant_task should win
+    let result = select! {
+        a = instant_task() => {
+            println("instant task won!");
+            a
+        },
+        b = slow_task() => {
+            println("slow task won!");
+            b
+        },
+    };
+
+    print("Result: ");
+    println(i64::to_string(result));
+
+    // Test 2: select between fast and slow
+    // fast_task should win
+    let result2 = select! {
+        x = fast_task() => {
+            println("fast task won!");
+            x
+        },
+        y = slow_task() => {
+            println("slow task won!");
+            y
+        },
+    };
+
+    print("Result2: ");
+    println(i64::to_string(result2));
+
+    println("=== select! tests complete ===");
+}

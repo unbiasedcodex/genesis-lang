@@ -1,0 +1,46 @@
+// Example: Struct methods with impl blocks
+// Demonstrates static methods, instance methods, and method chaining
+
+struct Counter {
+    value: i64,
+}
+
+impl Counter {
+    // Static method (constructor) - returns a new Counter
+    fn create(v: i64) -> Counter {
+        Counter { value: v }
+    }
+
+    // Instance method - takes self, returns value
+    fn get_value(self) -> i64 {
+        self.value
+    }
+
+    // Instance method - returns new Counter with incremented value
+    fn increment(self) -> Counter {
+        Counter { value: self.value + 1 }
+    }
+
+    // Instance method - returns new Counter with doubled value
+    fn double(self) -> Counter {
+        Counter { value: self.value * 2 }
+    }
+}
+
+fn main() {
+    // Create using static method
+    let c = Counter::create(10);
+    println(c.get_value());  // 10
+
+    // Call instance methods
+    let c2 = c.increment();
+    println(c2.get_value());  // 11
+
+    // Method chaining
+    let c3 = Counter::create(5);
+    let c4 = c3.double();
+    let c5 = c4.increment();
+    println(c5.get_value());  // 11 (5*2 + 1)
+
+    println(0);
+}

@@ -1,0 +1,18 @@
+// Test external module loading
+
+mod math;   // Loads from math.gl
+mod utils;  // Loads from utils/mod.gl
+
+fn main() -> i64 {
+    let a = math::add(10, 5);        // 15
+    let b = math::multiply(3, 4);    // 12
+    let c = utils::double(7);        // 14
+    let d = utils::square(3);        // 9
+
+    println(a);
+    println(b);
+    println(c);
+    println(d);
+
+    a + b + c + d  // 15 + 12 + 14 + 9 = 50
+}

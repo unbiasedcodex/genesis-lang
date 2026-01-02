@@ -1,0 +1,27 @@
+// Test Vec<T> dynamic array
+
+fn main() -> i32 {
+    // Create a new vector
+    let v = Vec::new()
+
+    // Push some elements
+    Vec::push(v, 10)
+    Vec::push(v, 20)
+    Vec::push(v, 30)
+
+    // Get length
+    let len = Vec::len(v)
+    println(len)  // Should print 3
+
+    // Get elements
+    let first = Vec::get(v, 0)
+    let second = Vec::get(v, 1)
+    let third = Vec::get(v, 2)
+
+    println(first)   // Should print 10
+    println(second)  // Should print 20
+    println(third)   // Should print 30
+
+    // Return sum as exit code
+    first + second + third - 60  // Should be 0
+}

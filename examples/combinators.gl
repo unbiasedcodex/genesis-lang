@@ -1,0 +1,70 @@
+// Async Combinators Example
+// Demonstrates select! and join! for concurrent async programming
+
+async fn fetch_data(id: i64) -> i64 {
+    print("  Fetching data ");
+    println(i64::to_string(id));
+    sleep_ms(10 * id);
+    print("  Done fetching ");
+    println(i64::to_string(id));
+    id * 100
+}
+
+async fn slow_operation() -> i64 {
+    println("  Slow operation starting...");
+    sleep_ms(50);
+    println("  Slow operation done");
+    999
+}
+
+async fn fast_operation() -> i64 {
+    println("  Fast operation starting...");
+    sleep_ms(5);
+    println("  Fast operation done");
+    42
+}
+
+fn main() {
+    println("=== Async Combinators Demo ===");
+    println("");
+
+    // Test 1: select! - returns first completed
+    println("Test 1: select! - race between fast and slow");
+    let winner = select! {
+        x = fast_operation() => {
+            print("  Fast won with: ");
+            println(i64::to_string(x));
+            x
+        },
+        y = slow_operation() => {
+            print("  Slow won with: ");
+            println(i64::to_string(y));
+            y
+        },
+    };
+    print("Winner: ");
+    println(i64::to_string(winner));
+    println("");
+
+    // Test 2: join! - wait for all
+    println("Test 2: join! - wait for multiple fetches");
+    let results = join!(
+        fetch_data(1),
+        fetch_data(2),
+        fetch_data(3)
+    );
+    println("All fetches completed!");
+    println("");
+
+    // Test 3: Nested combinators
+    println("Test 3: Combining select! with computation");
+    let result = select! {
+        a = fast_operation() => a + 1,
+        b = slow_operation() => b + 1,
+    };
+    print("Result: ");
+    println(i64::to_string(result));
+
+    println("");
+    println("=== Demo Complete ===");
+}

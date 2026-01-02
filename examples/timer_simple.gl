@@ -1,0 +1,14 @@
+// Simple Timer Test - Genesis Lang Phase 5
+// Minimal test for async timers
+
+fn main() -> i64 {
+    println("Testing simple timer...")
+
+    // Test: Simple sleep
+    let future1 = sleep_ms(50)
+    println("Future created")
+    block_on(future1)
+    println("Sleep completed!")
+
+    0
+}

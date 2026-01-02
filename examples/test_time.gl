@@ -1,0 +1,12 @@
+// Test time function
+// We can't call __rt_time_now directly, but we can check if sleep_ms creation works
+
+fn main() -> i64 {
+    println("Testing sleep future creation...")
+
+    // Just create without await
+    let f = sleep_ms(10)
+    println("Future created!")
+
+    0
+}

@@ -1,0 +1,102 @@
+// Test Option::map and Option::and_then methods
+
+fn double(x: i64) -> i64 {
+    x * 2
+}
+
+fn to_option(x: i64) -> Option<i64> {
+    if x > 0 {
+        Option::Some(x * 10)
+    } else {
+        Option::None
+    }
+}
+
+fn main() -> i64 {
+    println("=== Option::map and Option::and_then Test ===")
+
+    // Test Option::map on Some
+    let some_val = Option::Some(5)
+    let mapped = Option::map(some_val, double)
+
+    match mapped {
+        Some(v) => {
+            print("Option::map(Some(5), double) = Some(")
+            print(v)
+            println(")")
+            if v != 10 {
+                println("ERROR: Expected 10")
+                return 1
+            }
+        }
+        None => {
+            println("ERROR: Expected Some, got None")
+            return 1
+        }
+    }
+
+    // Test Option::map on None
+    let none_val = Option::None
+    let mapped_none = Option::map(none_val, double)
+
+    match mapped_none {
+        Some(v) => {
+            println("ERROR: Expected None, got Some")
+            return 1
+        }
+        None => {
+            println("Option::map(None, double) = None (correct)")
+        }
+    }
+
+    // Test Option::and_then on Some with positive value (returns Some)
+    let some_pos = Option::Some(5)
+    let chained = Option::and_then(some_pos, to_option)
+
+    match chained {
+        Some(v) => {
+            print("Option::and_then(Some(5), to_option) = Some(")
+            print(v)
+            println(")")
+            if v != 50 {
+                println("ERROR: Expected 50")
+                return 1
+            }
+        }
+        None => {
+            println("ERROR: Expected Some(50), got None")
+            return 1
+        }
+    }
+
+    // Test Option::and_then on Some with negative value (returns None)
+    let some_neg = Option::Some(-5)
+    let chained_none = Option::and_then(some_neg, to_option)
+
+    match chained_none {
+        Some(v) => {
+            println("ERROR: Expected None, got Some")
+            return 1
+        }
+        None => {
+            println("Option::and_then(Some(-5), to_option) = None (correct)")
+        }
+    }
+
+    // Test Option::and_then on None
+    let none_val2 = Option::None
+    let chained_from_none = Option::and_then(none_val2, to_option)
+
+    match chained_from_none {
+        Some(v) => {
+            println("ERROR: Expected None, got Some")
+            return 1
+        }
+        None => {
+            println("Option::and_then(None, to_option) = None (correct)")
+        }
+    }
+
+    println("=== All Option tests passed! ===")
+    0
+}

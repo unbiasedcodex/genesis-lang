@@ -1,0 +1,32 @@
+// Simple Channel Test - Genesis Lang (Async Phase 6)
+// Tests basic channel creation and try_send
+
+fn main() -> i64 {
+    println("Testing channels (Phase 6)...")
+
+    // Test 1: Create a channel with capacity 4
+    println("Creating channel...")
+    let ch: Channel<i64> = channel(4)
+    let sender: Sender<i64> = Channel::sender(ch)
+    let receiver: Receiver<i64> = Channel::receiver(ch)
+    println("Channel created!")
+
+    // Test 2: Non-blocking send (try_send)
+    println("Testing try_send...")
+    let sent1: bool = Sender::try_send(sender, 10)
+    if sent1 {
+        println("Sent 10 successfully")
+    } else {
+        println("Failed to send 10")
+    }
+
+    let sent2: bool = Sender::try_send(sender, 20)
+    if sent2 {
+        println("Sent 20 successfully")
+    } else {
+        println("Failed to send 20")
+    }
+
+    println("Channel basic tests passed!")
+    0
+}

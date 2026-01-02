@@ -1,0 +1,12 @@
+// Test negative literal
+
+fn main() -> i64 {
+    println("=== Negative Float Test ===");
+
+    let x = -5.5;
+    println("x =");
+    println(x);
+
+    println("=== Done ===");
+    0
+}

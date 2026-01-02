@@ -1,0 +1,22 @@
+// TCP I/O Test (Phase 4.1)
+// Tests TcpListener basic functionality
+
+fn main() {
+    println("Testing TCP I/O (Phase 4.1)...");
+    println("Test 1: Creating TcpListener on port 8080...");
+
+    let listener_result = TcpListener::bind("0.0.0.0", 8080);
+
+    match listener_result {
+        Ok(listener) => {
+            println("TcpListener created successfully!");
+            TcpListener::close(listener);
+            println("TcpListener closed.");
+        },
+        Err(code) => {
+            println("Failed to create TcpListener");
+        }
+    }
+
+    println("TCP I/O test completed!");
+}

@@ -1,0 +1,15 @@
+// Simple test for Dir::list
+fn main() -> i64 {
+    println("Testing Dir::list on /tmp");
+
+    let result = Dir::list("/tmp");
+
+    if Result::is_ok(result) {
+        println("Success - directory listing worked!");
+        // Don't try to access the Vec for now
+        0
+    } else {
+        println("Failed to list directory");
+        1
+    }
+}

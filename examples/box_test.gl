@@ -1,0 +1,18 @@
+// Test heap allocation with Box<T>
+
+fn main() -> i32 {
+    // Allocate an integer on the heap
+    let boxed_value = Box::new(42)
+
+    // Dereference to get the value
+    let value = *boxed_value
+
+    // Print the value
+    println(value)
+
+    // Explicitly free (normally handled by ownership system)
+    drop(boxed_value)
+
+    // Return success
+    0
+}

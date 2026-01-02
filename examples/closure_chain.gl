@@ -1,0 +1,19 @@
+// Closure chaining test in Genesis
+
+fn main() -> i64 {
+    let a: i64 = 2;
+    let b: i64 = 3;
+    let c: i64 = 5;
+
+    // Three independent closures
+    let f1 = |x: i64| x * a;      // multiply by 2
+    let f2 = |x: i64| x + b;      // add 3
+    let f3 = |x: i64| x - c;      // subtract 5
+
+    // Chain the calls
+    let v1 = f1(10);   // 10 * 2 = 20
+    let v2 = f2(v1);   // 20 + 3 = 23
+    let v3 = f3(v2);   // 23 - 5 = 18
+
+    v3  // result: 18
+}

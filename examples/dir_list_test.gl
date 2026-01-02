@@ -1,0 +1,91 @@
+// Test Dir::list function
+// Lists contents of a directory
+
+fn main() -> i64 {
+    println("=== Dir::list Test ===");
+
+    // Create a test directory structure
+    let test_dir = "/tmp/genesis_dir_test";
+
+    // Clean up first if exists
+    if File::exists(test_dir) {
+        // Remove files first
+        File::remove("/tmp/genesis_dir_test/file1.txt");
+        File::remove("/tmp/genesis_dir_test/file2.txt");
+        File::remove("/tmp/genesis_dir_test/subdir");
+        Dir::remove(test_dir);
+    }
+
+    // Create test directory
+    let create_result = Dir::create(test_dir);
+    if Result::is_ok(create_result) {
+        println("Created test directory");
+    } else {
+        println("Failed to create test directory");
+        return 1;
+    }
+
+    // Create some test files
+    let f1 = File::create("/tmp/genesis_dir_test/file1.txt");
+    if Result::is_ok(f1) {
+        let handle = Result::unwrap(f1);
+        File::write_string(handle, "Hello");
+        File::close(handle);
+        println("Created file1.txt");
+    }
+
+    let f2 = File::create("/tmp/genesis_dir_test/file2.txt");
+    if Result::is_ok(f2) {
+        let handle = Result::unwrap(f2);
+        File::write_string(handle, "World");
+        File::close(handle);
+        println("Created file2.txt");
+    }
+
+    // Create a subdirectory
+    Dir::create("/tmp/genesis_dir_test/subdir");
+    println("Created subdir");
+
+    // Now list the directory
+    println("");
+    println("Listing directory contents:");
+    let list_result = Dir::list(test_dir);
+
+    if Result::is_ok(list_result) {
+        let entries = Result::unwrap(list_result);
+        let count = Vec::len(entries);
+        println("Found entries:");
+        println(count);
+
+        // Print each entry
+        let i = 0;
+        while i < count {
+            let name = Vec::get(entries, i);
+            println(name);
+            i = i + 1;
+        }
+    } else {
+        println("Failed to list directory");
+        return 1;
+    }
+
+    // Test listing non-existent directory
+    println("");
+    println("Testing non-existent directory:");
+    let bad_result = Dir::list("/tmp/this_does_not_exist_12345");
+    if Result::is_err(bad_result) {
+        println("Correctly returned error for non-existent directory");
+    } else {
+        println("ERROR: Should have failed!");
+    }
+
+    // Cleanup
+    File::remove("/tmp/genesis_dir_test/file1.txt");
+    File::remove("/tmp/genesis_dir_test/file2.txt");
+    Dir::remove("/tmp/genesis_dir_test/subdir");
+    Dir::remove(test_dir);
+    println("");
+    println("Test completed successfully!");
+
+    0
+}

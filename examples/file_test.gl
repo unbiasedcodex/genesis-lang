@@ -1,0 +1,56 @@
+// Test File I/O functionality
+
+fn main() -> i64 {
+    println("=== File I/O Tests ===")
+
+    // Test 1: Create and write to a file
+    println("Test 1: Creating file...")
+    let f1 = File::create("/tmp/genesis_test.txt")
+    if Result::is_ok(f1) {
+        let file = Result::unwrap(f1)
+        let w = File::write_string(file, "Hello from Genesis!")
+        if Result::is_ok(w) {
+            println("Write succeeded")
+        } else {
+            println("Write failed!")
+            return 1
+        }
+        File::close(file)
+        println("File created successfully")
+    } else {
+        println("Failed to create file!")
+        return 1
+    }
+
+    // Test 2: Open and read the file
+    println("Test 2: Reading file...")
+    let f2 = File::open("/tmp/genesis_test.txt")
+    if Result::is_ok(f2) {
+        let file = Result::unwrap(f2)
+        let r = File::read_to_string(file)
+        if Result::is_ok(r) {
+            println("Read succeeded")
+            // Note: Can't easily use String::len on unwrapped Result yet
+        } else {
+            println("Read failed!")
+            return 2
+        }
+        File::close(file)
+    } else {
+        println("Failed to open file!")
+        return 2
+    }
+
+    // Test 3: Try to open non-existent file
+    println("Test 3: Opening non-existent file...")
+    let f3 = File::open("/tmp/nonexistent_genesis_file.txt")
+    if Result::is_err(f3) {
+        println("Correctly failed to open non-existent file")
+    } else {
+        println("ERROR: Should have failed!")
+        return 3
+    }
+
+    println("=== All File I/O Tests Passed ===")
+    0
+}

@@ -1,0 +1,51 @@
+// Comprehensive format! macro test
+
+fn main() -> i64 {
+    println("=== Testing format! macro ===");
+
+    // Test 1: No placeholders
+    let s1 = format!("Hello, World!");
+    println(s1);
+
+    // Test 2: Single placeholder at end
+    let s2 = format!("Value: {}", 42);
+    println(s2);
+
+    // Test 3: Single placeholder at start
+    let s3 = format!("{} items", 5);
+    println(s3);
+
+    // Test 4: Two placeholders
+    let a = 10;
+    let b = 20;
+    let s4 = format!("{} + {}", a, b);
+    println(s4);
+
+    // Test 5: Three placeholders
+    let s5 = format!("{} + {} = {}", 10, 20, 30);
+    println(s5);
+
+    // Test 6: Variable reference
+    let x = 100;
+    let s6 = format!("x = {}", x);
+    println(s6);
+
+    // Test 7: Just a placeholder
+    let s7 = format!("{}", 999);
+    println(s7);
+
+    // Test 8: Escaped braces
+    let s8 = format!("Use {{}} for placeholders");
+    println(s8);
+
+    // Test 9: Four placeholders
+    let s9 = format!("{} {} {} {}", 1, 2, 3, 4);
+    println(s9);
+
+    // Test 10: Five placeholders
+    let s10 = format!("{}{}{}{}{}", 1, 2, 3, 4, 5);
+    println(s10);
+
+    println("=== All tests passed! ===");
+    0
+}

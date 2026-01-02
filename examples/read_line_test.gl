@@ -1,0 +1,13 @@
+// Test read_line function (reads from stdin)
+
+fn main() -> i64 {
+    println("=== read_line() Test ===")
+    println("Enter some text:")
+    let input = read_line()
+    let len = String::len(input)
+    print("You entered ")
+    print(len)
+    println(" characters (including newline)")
+    println("=== Test complete ===")
+    len
+}

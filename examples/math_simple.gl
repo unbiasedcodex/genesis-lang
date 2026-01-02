@@ -1,0 +1,38 @@
+// Simple math test
+
+fn main() -> i64 {
+    println("=== Simple Math Test ===");
+
+    // Test PI
+    let pi = f64::PI();
+    println("PI =");
+    println(pi);
+
+    // Test sqrt
+    let sqrt_16 = f64::sqrt(16.0);
+    println("sqrt(16.0) =");
+    println(sqrt_16);
+
+    // Test sin
+    let sin_0 = f64::sin(0.0);
+    println("sin(0) =");
+    println(sin_0);
+
+    // Test cos
+    let cos_0 = f64::cos(0.0);
+    println("cos(0) =");
+    println(cos_0);
+
+    // Test pow
+    let pow_2_3 = f64::pow(2.0, 3.0);
+    println("pow(2, 3) =");
+    println(pow_2_3);
+
+    // Test integer abs
+    let abs_val = i64::abs(-42);
+    println("i64::abs(-42) =");
+    println(abs_val);
+
+    println("=== Done ===");
+    0
+}

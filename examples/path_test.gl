@@ -1,0 +1,83 @@
+// Genesis Lang Path Operations Test
+
+fn main() -> i64 {
+    println("=== Path Operations Test ===")
+
+    // Test Fs::path_join
+    println("\n1. Testing Fs::path_join:")
+    let joined = Fs::path_join("/home", "user")
+    // Can't easily print String contents yet, but test that it compiles
+    println("  Fs::path_join executed successfully")
+
+    // Test Fs::path_filename
+    println("\n2. Testing Fs::path_filename:")
+    let fname = Fs::path_filename("/home/user/document.txt")
+    match fname {
+        Option::Some(_) => {
+            println("  Fs::path_filename returned Some")
+        },
+        Option::None => {
+            println("  Fs::path_filename returned None")
+        }
+    }
+
+    // Test with no slash
+    let fname2 = Fs::path_filename("document.txt")
+    match fname2 {
+        Option::Some(_) => {
+            println("  Fs::path_filename('document.txt') returned Some")
+        },
+        Option::None => {
+            println("  Fs::path_filename('document.txt') returned None")
+        }
+    }
+
+    // Test Fs::path_extension
+    println("\n3. Testing Fs::path_extension:")
+    let ext = Fs::path_extension("/home/user/document.txt")
+    match ext {
+        Option::Some(_) => {
+            println("  Fs::path_extension returned Some")
+        },
+        Option::None => {
+            println("  Fs::path_extension returned None")
+        }
+    }
+
+    // Test with no extension
+    let ext2 = Fs::path_extension("/home/user/document")
+    match ext2 {
+        Option::Some(_) => {
+            println("  Fs::path_extension('document') returned Some")
+        },
+        Option::None => {
+            println("  Fs::path_extension('document') returned None (correct)")
+        }
+    }
+
+    // Test Fs::path_parent
+    println("\n4. Testing Fs::path_parent:")
+    let parent = Fs::path_parent("/home/user/document.txt")
+    match parent {
+        Option::Some(_) => {
+            println("  Fs::path_parent returned Some")
+        },
+        Option::None => {
+            println("  Fs::path_parent returned None")
+        }
+    }
+
+    // Test with just filename
+    let parent2 = Fs::path_parent("document.txt")
+    match parent2 {
+        Option::Some(_) => {
+            println("  Fs::path_parent('document.txt') returned Some")
+        },
+        Option::None => {
+            println("  Fs::path_parent('document.txt') returned None (correct)")
+        }
+    }
+
+    println("\n=== Path Tests Complete ===")
+    0
+}

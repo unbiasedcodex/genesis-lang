@@ -1,0 +1,15 @@
+// Test println with float literal directly
+
+fn main() -> i64 {
+    println("=== Print Float Test ===");
+
+    // Direct literal
+    println(3.14);
+
+    // Positive variable
+    let y = 2.5;
+    println(y);
+
+    println("=== Done ===");
+    0
+}

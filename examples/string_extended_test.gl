@@ -1,0 +1,64 @@
+// Test all String methods
+
+fn main() -> i32 {
+    // Test String::new and is_empty
+    let s1 = String::new()
+    let empty1 = String::is_empty(s1)
+    println(empty1)  // Should print 1 (true)
+
+    // Test String::from
+    let s2 = String::from("Hello")
+    let len2 = String::len(s2)
+    println(len2)  // Should print 5
+
+    // Test is_empty on non-empty string
+    let empty2 = String::is_empty(s2)
+    println(empty2)  // Should print 0 (false)
+
+    // Test String::capacity
+    let cap = String::capacity(s2)
+    println(cap)  // Should print 5 (same as len for literals)
+
+    // Test String::char_at
+    let c0 = String::char_at(s2, 0)  // 'H' = 72
+    let c1 = String::char_at(s2, 1)  // 'e' = 101
+    println(c0)  // Should print 72
+    println(c1)  // Should print 101
+
+    // Test String::push on new string
+    let s3 = String::new()
+    String::push(s3, 65)  // 'A'
+    String::push(s3, 66)  // 'B'
+    String::push(s3, 67)  // 'C'
+    let len3 = String::len(s3)
+    println(len3)  // Should print 3
+
+    // Test String::clear
+    String::clear(s3)
+    let len4 = String::len(s3)
+    println(len4)  // Should print 0
+
+    // Test String::push_str
+    let s4 = String::new()
+    String::push(s4, 72)  // 'H'
+    String::push(s4, 105) // 'i'
+    String::push_str(s4, " World")
+    let len5 = String::len(s4)
+    println(len5)  // Should print 8 ("Hi World")
+
+    // Test String::concat
+    let s5 = String::from("Hello")
+    let s6 = String::from(" World")
+    let s7 = String::concat(s5, s6)
+    let len7 = String::len(s7)
+    println(len7)  // Should print 11
+
+    // Test String::substring
+    let s8 = String::from("Hello World")
+    let sub = String::substring(s8, 0, 5)
+    let sub_len = String::len(sub)
+    println(sub_len)  // Should print 5
+
+    // Return 0 if all tests passed
+    0
+}

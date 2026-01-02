@@ -1,0 +1,25 @@
+// Simple test of nested macro expansion
+
+// Inner macro: adds 10 to a value (with parens for proper precedence)
+macro_rules! add_ten {
+    ($x:expr) => { ($x + 10) }
+}
+
+// Outer macro: calls add_ten and then multiplies by 2
+macro_rules! add_and_double {
+    ($x:expr) => { (add_ten!($x) * 2) }
+}
+
+fn main() {
+    // Test single macro
+    let a = add_ten!(5);
+    println(a);  // Should be 15
+
+    // Test two-level nesting
+    let b = add_and_double!(5);
+    println(b);  // Should be (5+10)*2 = 30
+
+    // Test with different value
+    let c = add_and_double!(10);
+    println(c);  // Should be (10+10)*2 = 40
+}

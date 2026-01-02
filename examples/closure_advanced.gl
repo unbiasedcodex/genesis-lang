@@ -1,0 +1,24 @@
+// Advanced closures test in Genesis
+
+fn main() -> i64 {
+    // Multiple closures with different captures
+    let a: i64 = 2;
+    let b: i64 = 3;
+    let c: i64 = 5;
+
+    // Closure 1: captures 'a'
+    let double_a = |x: i64| x * a;
+
+    // Closure 2: captures 'b'
+    let add_b = |x: i64| x + b;
+
+    // Closure 3: captures 'a' and 'c' (multiple captures)
+    let combine = |x: i64| x * a + c;
+
+    // Test the closures
+    let r1 = double_a(10);   // 10 * 2 = 20
+    let r2 = add_b(r1);      // 20 + 3 = 23
+    let r3 = combine(4);     // 4 * 2 + 5 = 13
+
+    r1 + r2 + r3  // 20 + 23 + 13 = 56
+}

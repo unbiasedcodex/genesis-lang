@@ -1,0 +1,19 @@
+// Test Dir::list with Vec access
+fn main() -> i64 {
+    println("Testing Dir::list with Vec access");
+
+    let result = Dir::list("/tmp");
+
+    if Result::is_ok(result) {
+        println("Got result, attempting to access Vec...");
+        let entries = Result::unwrap(result);
+        println("Got Vec, getting length...");
+        let count = Vec::len(entries);
+        println("Number of entries:");
+        println(count);
+        0
+    } else {
+        println("Failed to list directory");
+        1
+    }
+}

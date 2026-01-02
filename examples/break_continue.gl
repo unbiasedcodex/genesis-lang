@@ -1,0 +1,76 @@
+// Test break and continue in loops (including labeled loops)
+
+fn main() {
+    println("=== Test 1: break in while loop ===");
+    let mut i: i64 = 0;
+    while i < 10 {
+        if i == 5 {
+            println("Breaking at 5");
+            break;
+        }
+        println(i64::to_string(i));
+        i = i + 1;
+    }
+    println("After while loop");
+
+    println("");
+    println("=== Test 2: continue in for loop ===");
+    for j in 0..10 {
+        if j == 3 {
+            continue;
+        }
+        if j == 7 {
+            continue;
+        }
+        println(i64::to_string(j));
+    }
+    println("After for loop");
+
+    println("");
+    println("=== Test 3: break in loop ===");
+    let mut k: i64 = 0;
+    loop {
+        if k >= 3 {
+            break;
+        }
+        println(i64::to_string(k));
+        k = k + 1;
+    }
+    println("After infinite loop");
+
+    println("");
+    println("=== Test 4: labeled break (break outer loop) ===");
+    'outer: for x in 0..3 {
+        print("x=");
+        println(i64::to_string(x));
+        for y in 0..5 {
+            print("  y=");
+            println(i64::to_string(y));
+            if y == 2 {
+                println("  Breaking outer!");
+                break 'outer;
+            }
+        }
+    }
+    println("After labeled break");
+
+    println("");
+    println("=== Test 5: labeled continue (skip to next outer iteration) ===");
+    'outer2: for a in 0..3 {
+        print("a=");
+        println(i64::to_string(a));
+        for b in 0..3 {
+            print("  b=");
+            println(i64::to_string(b));
+            if b == 1 {
+                println("  Continue outer!");
+                continue 'outer2;
+            }
+        }
+        println("  (this won't print)");
+    }
+    println("After labeled continue");
+
+    println("");
+    println("All tests passed!");
+}

@@ -1,0 +1,21 @@
+// Test visibility - private function should fail
+
+mod math {
+    fn private_add(a: i64, b: i64) -> i64 {
+        a + b
+    }
+
+    pub fn public_add(a: i64, b: i64) -> i64 {
+        private_add(a, b)
+    }
+}
+
+fn main() -> i64 {
+    // This should work - public function
+    let x: i64 = math::public_add(1, 2)
+
+    // This should fail - private function
+    let y: i64 = math::private_add(3, 4)
+
+    x + y
+}

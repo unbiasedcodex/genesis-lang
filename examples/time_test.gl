@@ -1,0 +1,96 @@
+// Time module test
+
+fn main() -> i64 {
+    println("=== Time Module Test ===");
+
+    // Test time::now_ms
+    let start_ms = time::now_ms();
+    println("Current time (ms):");
+    println(start_ms);
+
+    // Test time::now_us
+    let start_us = time::now_us();
+    println("Current time (us):");
+    println(start_us);
+
+    // Test time::now_ns
+    let start_ns = time::now_ns();
+    println("Current time (ns):");
+    println(start_ns);
+
+    // Do some work to measure elapsed time
+    let mut sum: i64 = 0;
+    let mut i: i64 = 0;
+    while i < 100000 {
+        sum = sum + i;
+        i = i + 1;
+    }
+    println("Sum (work done):");
+    println(sum);
+
+    // Test time::elapsed_ms
+    let elapsed_ms = time::elapsed_ms(start_ms);
+    println("Elapsed time (ms):");
+    println(elapsed_ms);
+
+    // Test time::elapsed_us
+    let elapsed_us = time::elapsed_us(start_us);
+    println("Elapsed time (us):");
+    println(elapsed_us);
+
+    // Test time::elapsed_ns
+    let elapsed_ns = time::elapsed_ns(start_ns);
+    println("Elapsed time (ns):");
+    println(elapsed_ns);
+
+    println("=== Duration Tests ===");
+
+    // Test Duration::from_secs
+    let d1 = Duration::from_secs(5);
+    println("Duration from 5 secs (as_millis):");
+    println(Duration::as_millis(d1));
+
+    // Test Duration::from_millis
+    let d2 = Duration::from_millis(2500);
+    println("Duration from 2500 millis (as_secs):");
+    println(Duration::as_secs(d2));
+    println("Duration from 2500 millis (as_millis):");
+    println(Duration::as_millis(d2));
+
+    // Test Duration::from_micros
+    let d3 = Duration::from_micros(1500000);
+    println("Duration from 1500000 micros (as_millis):");
+    println(Duration::as_millis(d3));
+
+    // Test Duration::from_nanos
+    let d4 = Duration::from_nanos(2000000000);
+    println("Duration from 2000000000 nanos (as_secs):");
+    println(Duration::as_secs(d4));
+
+    // Test Duration::add
+    let d5 = Duration::from_secs(1);
+    let d6 = Duration::from_millis(500);
+    let d7 = Duration::add(d5, d6);
+    println("1 sec + 500 ms (as_millis):");
+    println(Duration::as_millis(d7));
+
+    // Test Duration::sub
+    let d8 = Duration::from_secs(2);
+    let d9 = Duration::from_millis(500);
+    let d10 = Duration::sub(d8, d9);
+    println("2 sec - 500 ms (as_millis):");
+    println(Duration::as_millis(d10));
+
+    // Test Duration::as_nanos
+    let d11 = Duration::from_millis(1);
+    println("1 ms in nanos:");
+    println(Duration::as_nanos(d11));
+
+    // Test Duration::as_micros
+    let d12 = Duration::from_millis(1);
+    println("1 ms in micros:");
+    println(Duration::as_micros(d12));
+
+    println("=== Time Module Test Complete ===");
+    0
+}

@@ -1,0 +1,25 @@
+// ============================================================
+// Genesis Lang - Default Type Parameters Example
+// ============================================================
+// Demonstrates default type parameters for generic types
+// Example: Advanced type system features
+
+// -----------------------------
+// Struct with default type parameter
+// -----------------------------
+struct Container<T = i64> {
+    value: T,
+}
+
+// -----------------------------
+// Main function
+// -----------------------------
+fn main() {
+    // Using default type (T = i64) - explicit type annotation
+    let c1: Container = Container { value: 42 };
+    println(c1.value);
+
+    // Using explicit type
+    let c2: Container<f64> = Container { value: 3.14 };
+    println(c2.value);
+}

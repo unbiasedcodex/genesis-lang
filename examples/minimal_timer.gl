@@ -1,0 +1,10 @@
+// Minimal Timer Test
+fn main() -> i64 {
+    println("Starting...")
+
+    // Just create a sleep future without block_on
+    let future = sleep_ms(10)
+    println("Future created OK")
+
+    0
+}

@@ -1,0 +1,6 @@
+// Hello World in Genesis - minimal example
+
+fn main() -> i32 {
+    let x: i32 = 42
+    x
+}

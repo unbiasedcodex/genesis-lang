@@ -1,0 +1,9 @@
+// Utils module using folder/mod.gl pattern
+
+pub fn double(x: i64) -> i64 {
+    x * 2
+}
+
+pub fn square(x: i64) -> i64 {
+    x * x
+}

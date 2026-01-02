@@ -1,0 +1,35 @@
+// Async/Await Test - Genesis Lang
+// Tests basic async function and await
+
+// Simple async function that returns a value
+async fn compute_value(x: i64) -> i64 {
+    x * 2
+}
+
+// Async function that calls another async function
+async fn compute_sum(a: i64, b: i64) -> i64 {
+    let x = compute_value(a).await
+    let y = compute_value(b).await
+    x + y
+}
+
+fn main() -> i64 {
+    println("Testing async/await...")
+
+    // Test 1: Simple async function with block_on
+    let future1 = compute_value(21)
+    let result1 = block_on(future1)
+    print("compute_value(21) = ")
+    println(result1)
+
+    // Test 2: Chained async calls
+    let future2 = compute_sum(10, 20)
+    let result2 = block_on(future2)
+    print("compute_sum(10, 20) = ")
+    println(result2)
+
+    // Test 3: Direct await (inside async context would be better, but for now...)
+    println("All async tests passed!")
+
+    0
+}

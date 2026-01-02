@@ -1,0 +1,65 @@
+// Test to_string functionality for integers and bools
+
+fn main() -> i64 {
+    println("=== to_string Tests ===")
+
+    // Test i64::to_string
+    let n1: i64 = 42
+    let s1: String = i64::to_string(n1)
+    print("i64::to_string(42) = \"")
+    print(s1)
+    print("\" (len = ")
+    print(String::len(s1))
+    println(")")
+
+    // Test with negative number
+    let n2: i64 = -123
+    let s2: String = i64::to_string(n2)
+    print("i64::to_string(-123) = \"")
+    print(s2)
+    print("\" (len = ")
+    print(String::len(s2))
+    println(")")
+
+    // Test with zero
+    let n3: i64 = 0
+    let s3: String = i64::to_string(n3)
+    print("i64::to_string(0) = \"")
+    print(s3)
+    print("\" (len = ")
+    print(String::len(s3))
+    println(")")
+
+    // Test bool::to_string
+    let b1: bool = true
+    let s4: String = bool::to_string(b1)
+    print("bool::to_string(true) = \"")
+    print(s4)
+    print("\" (len = ")
+    print(String::len(s4))
+    println(")")
+
+    let b2: bool = false
+    let s5: String = bool::to_string(b2)
+    print("bool::to_string(false) = \"")
+    print(s5)
+    print("\" (len = ")
+    print(String::len(s5))
+    println(")")
+
+    // Test large numbers
+    let big: i64 = 9223372036854775807
+    let s6: String = i64::to_string(big)
+    print("i64::to_string(MAX) = \"")
+    print(s6)
+    println("\"")
+
+    let neg_big: i64 = -9223372036854775808
+    let s7: String = i64::to_string(neg_big)
+    print("i64::to_string(MIN) = \"")
+    print(s7)
+    println("\"")
+
+    println("=== All tests done ===")
+    0
+}

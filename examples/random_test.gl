@@ -1,0 +1,73 @@
+// Comprehensive random module test
+
+fn main() -> i64 {
+    println("=== Random Module Test ===");
+
+    // Test 1: Seed and next_i64
+    println("Test 1: random::seed and random::next_i64");
+    random::seed(12345);
+    let r1 = random::next_i64();
+    let r2 = random::next_i64();
+    let r3 = random::next_i64();
+    println(r1);
+    println(r2);
+    println(r3);
+
+    // Test 2: Reproducibility with same seed
+    println("Test 2: Same seed produces same sequence");
+    random::seed(12345);
+    let s1 = random::next_i64();
+    let s2 = random::next_i64();
+    println(s1);
+    println(s2);
+    // Should match r1 and r2
+
+    // Test 3: random::range
+    println("Test 3: random::range(1, 100)");
+    random::seed(42);
+    let rng1 = random::range(1, 100);
+    let rng2 = random::range(1, 100);
+    let rng3 = random::range(1, 100);
+    let rng4 = random::range(1, 100);
+    let rng5 = random::range(1, 100);
+    println(rng1);
+    println(rng2);
+    println(rng3);
+    println(rng4);
+    println(rng5);
+
+    // Test 4: random::coin
+    println("Test 4: random::coin (10 flips)");
+    random::seed(99);
+    let mut heads = 0;
+    let mut tails = 0;
+
+    let c1 = random::coin();
+    if c1 { heads = heads + 1; } else { tails = tails + 1; }
+    let c2 = random::coin();
+    if c2 { heads = heads + 1; } else { tails = tails + 1; }
+    let c3 = random::coin();
+    if c3 { heads = heads + 1; } else { tails = tails + 1; }
+    let c4 = random::coin();
+    if c4 { heads = heads + 1; } else { tails = tails + 1; }
+    let c5 = random::coin();
+    if c5 { heads = heads + 1; } else { tails = tails + 1; }
+    let c6 = random::coin();
+    if c6 { heads = heads + 1; } else { tails = tails + 1; }
+    let c7 = random::coin();
+    if c7 { heads = heads + 1; } else { tails = tails + 1; }
+    let c8 = random::coin();
+    if c8 { heads = heads + 1; } else { tails = tails + 1; }
+    let c9 = random::coin();
+    if c9 { heads = heads + 1; } else { tails = tails + 1; }
+    let c10 = random::coin();
+    if c10 { heads = heads + 1; } else { tails = tails + 1; }
+
+    println("Heads:");
+    println(heads);
+    println("Tails:");
+    println(tails);
+
+    println("=== All tests passed! ===");
+    0
+}

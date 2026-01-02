@@ -1,0 +1,62 @@
+// Test advanced format! specifiers
+fn main() -> i64 {
+    println("=== Advanced format! Test ===");
+    println("");
+
+    // Basic format (should still work)
+    let basic = format!("Value: {}", 42);
+    println("Basic:");
+    println(basic);
+
+    // Zero-padded integers {:04}
+    println("");
+    println("Zero-padded integers {:04}:");
+    let padded = format!("Padded: {:04}", 7);
+    println(padded);
+
+    let padded2 = format!("Number: {:08}", 123);
+    println(padded2);
+
+    // Float with precision {:.2}
+    println("");
+    println("Float precision {:.2}:");
+    let pi = 3.14159265;
+    let formatted_pi = format!("Pi: {:.2}", pi);
+    println(formatted_pi);
+
+    let formatted_pi3 = format!("Pi (3 decimals): {:.3}", pi);
+    println(formatted_pi3);
+
+    // Width and precision {:08.2}
+    println("");
+    println("Width and precision {:08.2}:");
+    let combo = format!("Combined: {:08.2}", pi);
+    println(combo);
+
+    // Hexadecimal {:x}
+    println("");
+    println("Hexadecimal {:x} and {:X}:");
+    let hex_lower = format!("255 in hex: {:x}", 255);
+    println(hex_lower);
+
+    let hex_upper = format!("255 in HEX: {:X}", 255);
+    println(hex_upper);
+
+    // Octal {:o}
+    println("");
+    println("Octal {:o}:");
+    let octal = format!("8 in octal: {:o}", 8);
+    println(octal);
+
+    // Mixed format
+    println("");
+    println("Mixed format:");
+    let x = 42;
+    let y = 3.14159;
+    let mixed = format!("Int: {:04}, Float: {:.2}", x, y);
+    println(mixed);
+
+    println("");
+    println("=== All tests passed! ===");
+    0
+}

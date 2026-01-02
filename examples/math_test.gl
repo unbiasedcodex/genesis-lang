@@ -1,0 +1,233 @@
+// Math module test - Tests the new math functions
+
+fn main() -> i64 {
+    println("=== Genesis Math Module Test ===");
+    println("");
+
+    // ============ Constants ============
+    println("--- Constants ---");
+    let pi = f64::PI();
+    let e = f64::E();
+    println("PI =");
+    println(pi);
+    println("E =");
+    println(e);
+    println("");
+
+    // ============ Basic f64 functions ============
+    println("--- f64 Functions ---");
+
+    // abs
+    let x = -5.5;
+    let abs_x = f64::abs(x);
+    println("abs(-5.5) =");
+    println(abs_x);
+
+    // sqrt
+    let sqrt_16 = f64::sqrt(16.0);
+    println("sqrt(16.0) =");
+    println(sqrt_16);
+
+    // cbrt
+    let cbrt_27 = f64::cbrt(27.0);
+    println("cbrt(27.0) =");
+    println(cbrt_27);
+
+    // pow
+    let pow_2_10 = f64::pow(2.0, 10.0);
+    println("pow(2.0, 10.0) =");
+    println(pow_2_10);
+
+    // ============ Trigonometry ============
+    println("");
+    println("--- Trigonometry ---");
+
+    let sin_0 = f64::sin(0.0);
+    println("sin(0) =");
+    println(sin_0);
+
+    let cos_0 = f64::cos(0.0);
+    println("cos(0) =");
+    println(cos_0);
+
+    let sin_pi_2 = f64::sin(pi / 2.0);
+    println("sin(PI/2) =");
+    println(sin_pi_2);
+
+    let tan_0 = f64::tan(0.0);
+    println("tan(0) =");
+    println(tan_0);
+
+    // ============ Inverse Trigonometry ============
+    println("");
+    println("--- Inverse Trig ---");
+
+    let asin_1 = f64::asin(1.0);
+    println("asin(1) ~ PI/2 =");
+    println(asin_1);
+
+    let acos_0 = f64::acos(0.0);
+    println("acos(0) ~ PI/2 =");
+    println(acos_0);
+
+    let atan_1 = f64::atan(1.0);
+    println("atan(1) ~ PI/4 =");
+    println(atan_1);
+
+    // ============ Hyperbolic ============
+    println("");
+    println("--- Hyperbolic ---");
+
+    let sinh_0 = f64::sinh(0.0);
+    println("sinh(0) =");
+    println(sinh_0);
+
+    let cosh_0 = f64::cosh(0.0);
+    println("cosh(0) =");
+    println(cosh_0);
+
+    let tanh_0 = f64::tanh(0.0);
+    println("tanh(0) =");
+    println(tanh_0);
+
+    // ============ Exponential/Logarithm ============
+    println("");
+    println("--- Exp/Log ---");
+
+    let exp_1 = f64::exp(1.0);
+    println("exp(1) = e =");
+    println(exp_1);
+
+    let exp2_10 = f64::exp2(10.0);
+    println("exp2(10) = 1024 =");
+    println(exp2_10);
+
+    let ln_e = f64::ln(e);
+    println("ln(e) = 1 =");
+    println(ln_e);
+
+    let log2_1024 = f64::log2(1024.0);
+    println("log2(1024) = 10 =");
+    println(log2_1024);
+
+    let log10_1000 = f64::log10(1000.0);
+    println("log10(1000) = 3 =");
+    println(log10_1000);
+
+    let log_8_2 = f64::log(8.0, 2.0);
+    println("log(8, 2) = 3 =");
+    println(log_8_2);
+
+    // ============ Rounding ============
+    println("");
+    println("--- Rounding ---");
+
+    let floor_3_7 = f64::floor(3.7);
+    println("floor(3.7) = 3 =");
+    println(floor_3_7);
+
+    let ceil_3_2 = f64::ceil(3.2);
+    println("ceil(3.2) = 4 =");
+    println(ceil_3_2);
+
+    let round_3_5 = f64::round(3.5);
+    println("round(3.5) = 4 =");
+    println(round_3_5);
+
+    let trunc_neg_3_7 = f64::trunc(-3.7);
+    println("trunc(-3.7) = -3 =");
+    println(trunc_neg_3_7);
+
+    // ============ Min/Max ============
+    println("");
+    println("--- Min/Max ---");
+
+    let min_3_5 = f64::min(3.0, 5.0);
+    println("min(3, 5) = 3 =");
+    println(min_3_5);
+
+    let max_3_5 = f64::max(3.0, 5.0);
+    println("max(3, 5) = 5 =");
+    println(max_3_5);
+
+    // ============ Other ============
+    println("");
+    println("--- Other ---");
+
+    let hypot_3_4 = f64::hypot(3.0, 4.0);
+    println("hypot(3, 4) = 5 =");
+    println(hypot_3_4);
+
+    let atan2_1_1 = f64::atan2(1.0, 1.0);
+    println("atan2(1, 1) ~ PI/4 =");
+    println(atan2_1_1);
+
+    // ============ Integer functions ============
+    println("");
+    println("--- Integer Functions ---");
+
+    let i64_abs = i64::abs(-42);
+    println("i64::abs(-42) = 42 =");
+    println(i64_abs);
+
+    let i64_min = i64::min(10, 20);
+    println("i64::min(10, 20) = 10 =");
+    println(i64_min);
+
+    let i64_max = i64::max(10, 20);
+    println("i64::max(10, 20) = 20 =");
+    println(i64_max);
+
+    let i64_pow = i64::pow(2, 10);
+    println("i64::pow(2, 10) = 1024 =");
+    println(i64_pow);
+
+    // ============ Special values ============
+    println("");
+    println("--- Special Values ---");
+
+    let inf = f64::INFINITY();
+    println("INFINITY =");
+    println(inf);
+
+    let neg_inf = f64::NEG_INFINITY();
+    println("NEG_INFINITY =");
+    println(neg_inf);
+
+    let nan = f64::NAN();
+    println("NAN =");
+    println(nan);
+
+    // ============ Special value checks ============
+    println("");
+    println("--- Special Value Checks ---");
+
+    let is_nan_nan = f64::is_nan(nan);
+    println("is_nan(NAN) = true =");
+    println(is_nan_nan);
+
+    let is_nan_5 = f64::is_nan(5.0);
+    println("is_nan(5.0) = false =");
+    println(is_nan_5);
+
+    let is_inf_inf = f64::is_infinite(inf);
+    println("is_infinite(INFINITY) = true =");
+    println(is_inf_inf);
+
+    let is_inf_5 = f64::is_infinite(5.0);
+    println("is_infinite(5.0) = false =");
+    println(is_inf_5);
+
+    let is_finite_5 = f64::is_finite(5.0);
+    println("is_finite(5.0) = true =");
+    println(is_finite_5);
+
+    let is_finite_inf = f64::is_finite(inf);
+    println("is_finite(INFINITY) = false =");
+    println(is_finite_inf);
+
+    println("");
+    println("=== All tests completed! ===");
+
+    0
+}

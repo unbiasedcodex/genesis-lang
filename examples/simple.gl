@@ -1,0 +1,28 @@
+// Simple Genesis program that passes type checking
+
+fn main() {
+    let x: i32 = 42
+    let y: i32 = 10
+    let sum: i32 = add(x, y)
+}
+
+fn add(a: i32, b: i32) -> i32 {
+    a + b
+}
+
+fn subtract(a: i32, b: i32) -> i32 {
+    a - b
+}
+
+fn is_positive(n: i32) -> bool {
+    n > 0
+}
+
+struct Point {
+    x: f64,
+    y: f64,
+}
+
+fn make_point() {
+    let p = Point { x: 1.0, y: 2.0 }
+}

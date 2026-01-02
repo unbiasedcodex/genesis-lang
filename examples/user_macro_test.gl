@@ -1,0 +1,81 @@
+// Genesis Lang - User-Defined Macro Examples
+//
+// This file demonstrates user-defined macro capabilities in Genesis.
+
+// ============ Simple Macros ============
+
+// Macro that returns a constant value
+macro_rules! answer {
+    () => {
+        42
+    };
+}
+
+// Macro with expression capture
+macro_rules! double {
+    ($x:expr) => {
+        $x + $x
+    };
+}
+
+// Macro with multiple expressions
+macro_rules! add {
+    ($a:expr, $b:expr) => {
+        $a + $b
+    };
+}
+
+// ============ Multiple Rules ============
+
+// Macro with multiple pattern rules (matched in order)
+macro_rules! greet {
+    () => {
+        0
+    };
+    ($x:expr) => {
+        $x
+    };
+}
+
+// ============ Main Function ============
+
+fn main() -> i64 {
+    println("=== User-Defined Macro Tests ===")
+
+    // Test 1: Simple constant macro
+    let a = answer!()
+    println("answer!() = ")
+    println(i64::to_string(a))
+
+    // Test 2: Expression capture macro
+    let b = double!(10)
+    println("double!(10) = ")
+    println(i64::to_string(b))
+
+    // Test 3: Two expression macro
+    let c = add!(5, 7)
+    println("add!(5, 7) = ")
+    println(i64::to_string(c))
+
+    // Test 4: Multiple rules - empty pattern
+    let d = greet!()
+    println("greet!() = ")
+    println(i64::to_string(d))
+
+    // Test 5: Multiple rules - with argument
+    let e = greet!(99)
+    println("greet!(99) = ")
+    println(i64::to_string(e))
+
+    // Test 6: Nested expressions in macros
+    let f = double!(add!(3, 4))
+    println("double!(add!(3, 4)) = ")
+    println(i64::to_string(f))
+
+    println("=== All Tests Complete ===")
+
+    // Verify all results: 42 + 20 + 12 + 0 + 99 + 14 = 187
+    // Return 0 if all correct
+    let total = a + b + c + d + e + f
+    total - 187
+}

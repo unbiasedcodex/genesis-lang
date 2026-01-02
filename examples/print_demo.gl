@@ -1,0 +1,24 @@
+// Demo of print/println functions
+
+fn main() -> i32 {
+    println("=== Genesis Lang Print Demo ===")
+
+    // Print integers
+    let x: i64 = 42
+    print("The answer is: ")
+    println(x)
+
+    // Print result of expression
+    println(fib(10))
+
+    println("Done!")
+    0
+}
+
+fn fib(n: i64) -> i64 {
+    if n <= 1 {
+        n
+    } else {
+        fib(n - 1) + fib(n - 2)
+    }
+}

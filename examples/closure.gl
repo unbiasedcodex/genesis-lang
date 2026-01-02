@@ -1,0 +1,15 @@
+// Test closures in Genesis
+
+fn main() -> i64 {
+    // Simple closure without captures
+    let add = |x: i64, y: i64| x + y;
+    let result = add(3, 4);
+
+    // Closure that captures a variable
+    let multiplier: i64 = 10;
+    let multiply = |x: i64| x * multiplier;
+    let result2 = multiply(5);
+
+    // Return combined result
+    result + result2  // Should be 7 + 50 = 57
+}

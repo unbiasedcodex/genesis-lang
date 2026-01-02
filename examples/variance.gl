@@ -1,0 +1,32 @@
+// ============================================================
+// Genesis Lang - Variance & Subtyping Example
+// ============================================================
+// Demonstrates variance concepts and type rules
+// Example: Advanced type system features
+
+// -----------------------------
+// Variance Rules in Genesis:
+// -----------------------------
+// - &T (immutable ref): covariant in T
+// - &mut T (mutable ref): invariant in T
+// - fn(T) -> U: contravariant in T, covariant in U
+// - Vec<T>, Option<T>, Result<T,E>: covariant
+// - User-defined generic types: invariant (safe default)
+
+fn main() {
+    // Basic type demonstrations
+    let x: i64 = 42;
+    println(x);
+
+    // Option is covariant - the inner type T follows variance rules
+    let opt: Option<i64> = Option::Some(100);
+    let val = Option::unwrap(opt);
+    println(val);
+
+    // Result is covariant in both Ok and Err type parameters
+    let res: Result<i64, i64> = Result::Ok(200);
+    let ok_val = Result::unwrap(res);
+    println(ok_val);
+
+    println(0);  // Success marker
+}

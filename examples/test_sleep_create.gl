@@ -1,0 +1,7 @@
+// Test creating sleep future
+fn main() -> i64 {
+    println("About to create sleep")
+    let f = sleep_ms(100)
+    println("Sleep created")
+    0
+}

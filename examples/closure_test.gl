@@ -1,0 +1,10 @@
+// Test closures
+
+fn main() -> i64 {
+    // Simple closure without captures
+    let add = |x: i64, y: i64| -> i64 { x + y }
+    let result = add(3, 4)
+    println(result)  // Should print 7
+
+    result - 7  // Return 0 if correct
+}

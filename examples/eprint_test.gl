@@ -1,0 +1,24 @@
+// Test eprint and eprintln functions (output to stderr)
+
+fn main() {
+    // Test eprintln with strings
+    eprintln("=== eprint/eprintln Test ===");
+
+    // Test eprint (no newline)
+    eprint("Error: ");
+    eprintln("Something went wrong");
+
+    // Test eprintln with integers
+    eprintln(42);
+    eprintln(123);
+
+    // Test eprint with integers
+    eprint("Code: ");
+    eprintln(500);
+
+    // Mix of stdout and stderr
+    println("This goes to stdout");
+    eprintln("This goes to stderr");
+
+    println("=== Test complete ===");
+}

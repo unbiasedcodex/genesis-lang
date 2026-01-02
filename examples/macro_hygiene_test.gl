@@ -1,0 +1,48 @@
+// Test macro hygiene
+// This tests that macro-introduced variables don't shadow user variables
+
+// Macro that introduces a local variable 'temp'
+macro_rules! with_temp {
+    ($val:expr) => {
+        {
+            let temp = $val;
+            temp * 2
+        }
+    }
+}
+
+// Another macro that also uses 'temp'
+macro_rules! double_temp {
+    ($val:expr) => {
+        {
+            let temp = $val + 100;
+            temp
+        }
+    }
+}
+
+fn main() {
+    // User's variable named 'temp'
+    let temp = 10;
+
+    // Call macro - should NOT affect user's 'temp'
+    let result1 = with_temp!(5);  // (5 * 2) = 10
+
+    // User's temp should still be 10
+    println(temp);     // Should print 10
+    println(result1);  // Should print 10
+
+    // Another macro call
+    let result2 = double_temp!(7);  // 7 + 100 = 107
+    println(result2);  // Should print 107
+
+    // User's temp should STILL be 10
+    println(temp);     // Should print 10
+
+    // Test nested macro with user's temp
+    let result3 = with_temp!(temp);  // temp * 2 = 20
+    println(result3);  // Should print 20
+
+    // Final check - user's temp unchanged
+    println(temp);     // Should print 10
+}

@@ -1,0 +1,51 @@
+// Test nested macro expansion
+// This file tests that macro expansion properly handles nested macro calls
+
+// Inner macro: adds 10 to a value
+macro_rules! add_ten {
+    ($x:expr) => { $x + 10 }
+}
+
+// Middle macro: calls add_ten and then multiplies by 2
+macro_rules! add_and_double {
+    ($x:expr) => { add_ten!($x) * 2 }
+}
+
+// Outer macro: calls add_and_double and subtracts 5
+macro_rules! complex_math {
+    ($x:expr) => { add_and_double!($x) - 5 }
+}
+
+// Simple wrapper macro
+macro_rules! wrap {
+    ($x:expr) => { $x }
+}
+
+// Macro that generates a wrapped call
+macro_rules! wrapped_double {
+    ($x:expr) => { wrap!($x * 2) }
+}
+
+fn main() {
+    // Test single macro
+    let a = add_ten!(5);
+    println(format!("add_ten!(5) = {}", a));  // Should be 15
+
+    // Test two-level nesting
+    let b = add_and_double!(5);
+    println(format!("add_and_double!(5) = {}", b));  // Should be (5+10)*2 = 30
+
+    // Test three-level nesting
+    let c = complex_math!(5);
+    println(format!("complex_math!(5) = {}", c));  // Should be ((5+10)*2)-5 = 25
+
+    // Test simple wrap
+    let d = wrap!(42);
+    println(format!("wrap!(42) = {}", d));  // Should be 42
+
+    // Test wrapped expression
+    let e = wrapped_double!(7);
+    println(format!("wrapped_double!(7) = {}", e));  // Should be 14
+
+    println("All nested macro tests passed!");
+}

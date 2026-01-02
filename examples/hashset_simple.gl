@@ -1,0 +1,19 @@
+// Simple HashSet test
+
+fn main() -> i64 {
+    println("Creating HashSet...")
+    let set: HashSet<i64> = HashSet::new()
+    println("HashSet created!")
+
+    println("Inserting 10...")
+    HashSet::insert(set, 10)
+    println("Insert done!")
+
+    println("Checking len...")
+    let len = HashSet::len(set)
+    print("Len: ")
+    println(len)
+
+    println("Done!")
+    0
+}

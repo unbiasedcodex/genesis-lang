@@ -1,0 +1,25 @@
+// Test Option::None
+
+fn main() -> i32 {
+    // Create None variant
+    let none_val = Option::None
+
+    // Test is_none - should be true (1)
+    let is_none_result: bool = Option::is_none(none_val)
+    print("is_none(None) = ")
+    println(is_none_result)
+
+    // Test is_some - should be false (0)
+    let none_val2 = Option::None
+    let is_some_result: bool = Option::is_some(none_val2)
+    print("is_some(None) = ")
+    println(is_some_result)
+
+    // Test unwrap_or on None (should return default 999)
+    let none_val3 = Option::None
+    let result: i64 = Option::unwrap_or(none_val3, 999)
+    print("unwrap_or(None, 999) = ")
+    println(result)
+
+    0
+}

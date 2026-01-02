@@ -1,0 +1,89 @@
+// Test i64::parse functionality
+
+fn main() -> i64 {
+    println("=== i64::parse Tests ===")
+
+    // Test 1: Parse valid positive integer
+    let s1 = String::from("42")
+    let r1 = i64::parse(s1)
+    print("parse(\"42\") = ")
+    if Result::is_ok(r1) {
+        let val = Result::unwrap(r1)
+        print(val)
+        println(" (Ok)")
+    } else {
+        println("Err")
+    }
+
+    // Test 2: Parse valid negative integer
+    let s2 = String::from("-123")
+    let r2 = i64::parse(s2)
+    print("parse(\"-123\") = ")
+    if Result::is_ok(r2) {
+        let val = Result::unwrap(r2)
+        print(val)
+        println(" (Ok)")
+    } else {
+        println("Err")
+    }
+
+    // Test 3: Parse zero
+    let s3 = String::from("0")
+    let r3 = i64::parse(s3)
+    print("parse(\"0\") = ")
+    if Result::is_ok(r3) {
+        let val = Result::unwrap(r3)
+        print(val)
+        println(" (Ok)")
+    } else {
+        println("Err")
+    }
+
+    // Test 4: Parse invalid string (letters)
+    let s4 = String::from("abc")
+    let r4 = i64::parse(s4)
+    print("parse(\"abc\") = ")
+    if Result::is_err(r4) {
+        let err = Result::unwrap_err(r4)
+        print("Err(")
+        print(err)
+        println(")")
+    } else {
+        println("Ok (unexpected!)")
+    }
+
+    // Test 5: Parse mixed (number then letters)
+    let s5 = String::from("123abc")
+    let r5 = i64::parse(s5)
+    print("parse(\"123abc\") = ")
+    if Result::is_err(r5) {
+        let err = Result::unwrap_err(r5)
+        print("Err(")
+        print(err)
+        println(") - trailing chars")
+    } else {
+        println("Ok (unexpected!)")
+    }
+
+    // Test 6: Parse with leading whitespace (strtol skips it)
+    let s6 = String::from("  99")
+    let r6 = i64::parse(s6)
+    print("parse(\"  99\") = ")
+    if Result::is_ok(r6) {
+        let val = Result::unwrap(r6)
+        print(val)
+        println(" (Ok - whitespace skipped)")
+    } else {
+        println("Err")
+    }
+
+    // Test 7: Computation with parsed value
+    let s7 = String::from("10")
+    let r7 = i64::parse(s7)
+    let n = Result::unwrap_or(r7, 0)
+    print("parse(\"10\") * 5 = ")
+    println(n * 5)
+
+    println("=== All tests done ===")
+    0
+}

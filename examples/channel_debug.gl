@@ -1,0 +1,44 @@
+// Channel Debug Test - test raw receive
+
+fn main() -> i64 {
+    println("Creating channel...")
+    let ch: Channel<i64> = channel(4)
+    let sender: Sender<i64> = Channel::sender(ch)
+    let receiver: Receiver<i64> = Channel::receiver(ch)
+
+    println("Sending 42...")
+    let r1: i64 = Sender::try_send(sender, 42)
+    print("Send result: ")
+    println(r1)
+
+    // Test the raw value from runtime
+    // We'll inspect what the Option structure contains
+    println("Receiving...")
+    let opt: Option<i64> = Receiver::try_recv(receiver)
+
+    // Check the discriminant
+    match opt {
+        Some(v) => {
+            print("Got Some with value: ")
+            println(v)
+        }
+        None => {
+            println("Got None")
+        }
+    }
+
+    // Try receiving again (should be None)
+    println("Trying again...")
+    let opt2: Option<i64> = Receiver::try_recv(receiver)
+    match opt2 {
+        Some(v) => {
+            print("Got Some: ")
+            println(v)
+        }
+        None => {
+            println("Got None (expected)")
+        }
+    }
+
+    0
+}

@@ -1,0 +1,6 @@
+// Test just printing before any async code
+fn main() -> i64 {
+    println("Before anything")
+    println("Second line")
+    0
+}

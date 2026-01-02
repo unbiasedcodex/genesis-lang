@@ -1,0 +1,164 @@
+// Test Result::map, Result::map_err, and Result::and_then methods
+
+fn double(x: i64) -> i64 {
+    x * 2
+}
+
+fn negate(x: i64) -> i64 {
+    0 - x
+}
+
+fn check_positive(x: i64) -> Result<i64, i64> {
+    if x > 0 {
+        Result::Ok(x * 10)
+    } else {
+        Result::Err(-1)
+    }
+}
+
+fn main() -> i64 {
+    println("=== Result::map, map_err, and_then Test ===")
+
+    // Test Result::map on Ok
+    let ok_val = Result::Ok(5)
+    let mapped = Result::map(ok_val, double)
+
+    match mapped {
+        Ok(v) => {
+            print("Result::map(Ok(5), double) = Ok(")
+            print(v)
+            println(")")
+            if v != 10 {
+                println("ERROR: Expected 10")
+                return 1
+            }
+        }
+        Err(e) => {
+            println("ERROR: Expected Ok, got Err")
+            return 1
+        }
+    }
+
+    // Test Result::map on Err
+    let err_val = Result::Err(42)
+    let mapped_err = Result::map(err_val, double)
+
+    match mapped_err {
+        Ok(v) => {
+            println("ERROR: Expected Err, got Ok")
+            return 1
+        }
+        Err(e) => {
+            print("Result::map(Err(42), double) = Err(")
+            print(e)
+            println(") (correct - error preserved)")
+            if e != 42 {
+                println("ERROR: Expected error 42")
+                return 1
+            }
+        }
+    }
+
+    // Test Result::map_err on Err
+    let err_val2 = Result::Err(5)
+    let mapped_err2 = Result::map_err(err_val2, negate)
+
+    match mapped_err2 {
+        Ok(v) => {
+            println("ERROR: Expected Err, got Ok")
+            return 1
+        }
+        Err(e) => {
+            print("Result::map_err(Err(5), negate) = Err(")
+            print(e)
+            println(")")
+            if e != -5 {
+                println("ERROR: Expected -5")
+                return 1
+            }
+        }
+    }
+
+    // Test Result::map_err on Ok
+    let ok_val2 = Result::Ok(100)
+    let mapped_ok = Result::map_err(ok_val2, negate)
+
+    match mapped_ok {
+        Ok(v) => {
+            print("Result::map_err(Ok(100), negate) = Ok(")
+            print(v)
+            println(") (correct - value preserved)")
+            if v != 100 {
+                println("ERROR: Expected 100")
+                return 1
+            }
+        }
+        Err(e) => {
+            println("ERROR: Expected Ok, got Err")
+            return 1
+        }
+    }
+
+    // Test Result::and_then on Ok with positive (returns Ok)
+    let ok_pos = Result::Ok(5)
+    let chained = Result::and_then(ok_pos, check_positive)
+
+    match chained {
+        Ok(v) => {
+            print("Result::and_then(Ok(5), check_positive) = Ok(")
+            print(v)
+            println(")")
+            if v != 50 {
+                println("ERROR: Expected 50")
+                return 1
+            }
+        }
+        Err(e) => {
+            println("ERROR: Expected Ok(50), got Err")
+            return 1
+        }
+    }
+
+    // Test Result::and_then on Ok with negative (returns Err)
+    let ok_neg = Result::Ok(-5)
+    let chained_err = Result::and_then(ok_neg, check_positive)
+
+    match chained_err {
+        Ok(v) => {
+            println("ERROR: Expected Err, got Ok")
+            return 1
+        }
+        Err(e) => {
+            print("Result::and_then(Ok(-5), check_positive) = Err(")
+            print(e)
+            println(") (correct)")
+            if e != -1 {
+                println("ERROR: Expected -1")
+                return 1
+            }
+        }
+    }
+
+    // Test Result::and_then on Err
+    let err_val3 = Result::Err(99)
+    let chained_from_err = Result::and_then(err_val3, check_positive)
+
+    match chained_from_err {
+        Ok(v) => {
+            println("ERROR: Expected Err, got Ok")
+            return 1
+        }
+        Err(e) => {
+            print("Result::and_then(Err(99), check_positive) = Err(")
+            print(e)
+            println(") (correct - error preserved)")
+            if e != 99 {
+                println("ERROR: Expected 99")
+                return 1
+            }
+        }
+    }
+
+    println("=== All Result tests passed! ===")
+    0
+}

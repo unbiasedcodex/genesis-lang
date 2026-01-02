@@ -1,0 +1,17 @@
+// Test f64::abs with negative number
+
+fn main() -> i64 {
+    println("=== f64::abs Test ===");
+
+    // This is the problematic case from the full test
+    let x = 0.0 - 5.5;  // Negative number
+    println("x =");
+    println(x);
+
+    let abs_x = f64::abs(x);
+    println("abs(x) =");
+    println(abs_x);
+
+    println("=== Done ===");
+    0
+}

@@ -1,0 +1,19 @@
+// Test async then sleep
+async fn simple() -> i64 {
+    42
+}
+
+fn main() -> i64 {
+    println("Testing simple async first")
+    let f1 = simple()
+    let r1 = block_on(f1)
+    print("Simple result: ")
+    println(r1)
+
+    println("Now testing sleep")
+    let f2 = sleep_ms(10)
+    println("Sleep created")
+    block_on(f2)
+    println("Sleep done")
+    0
+}

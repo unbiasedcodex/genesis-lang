@@ -1,0 +1,25 @@
+// Nested closures test in Genesis
+
+fn main() -> i64 {
+    let base: i64 = 10;
+
+    // Outer closure that captures 'base'
+    let outer = |x: i64| {
+        // Uses captured base and parameter
+        x + base
+    };
+
+    // Closure that uses the result of another closure
+    let multiplier: i64 = 2;
+    let process = |y: i64| {
+        let temp = outer(y);  // Calls outer closure
+        temp * multiplier     // Multiplies by captured value
+    };
+
+    // outer(5) = 5 + 10 = 15
+    // process(5) = outer(5) * 2 = 15 * 2 = 30
+    let r1 = outer(5);    // 15
+    let r2 = process(5);  // 30
+
+    r1 + r2  // 15 + 30 = 45
+}

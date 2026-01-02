@@ -1,0 +1,57 @@
+// Full test for Dir::list
+fn main() -> i64 {
+    // Create a test directory
+    let test_dir = "/tmp/genesis_test_dir";
+
+    // Clean up first
+    File::remove("/tmp/genesis_test_dir/a.txt");
+    File::remove("/tmp/genesis_test_dir/b.txt");
+    Dir::remove(test_dir);
+
+    // Create test directory
+    println("Creating test directory...");
+    let cr = Dir::create(test_dir);
+    if Result::is_err(cr) {
+        println("Failed to create directory");
+        return 1;
+    }
+
+    // Create test files using touch-like approach
+    let f1 = File::create("/tmp/genesis_test_dir/a.txt");
+    if Result::is_ok(f1) {
+        File::close(Result::unwrap(f1));
+    }
+    let f2 = File::create("/tmp/genesis_test_dir/b.txt");
+    if Result::is_ok(f2) {
+        File::close(Result::unwrap(f2));
+    }
+
+    println("Listing directory...");
+    let result = Dir::list(test_dir);
+
+    if Result::is_ok(result) {
+        let entries = Result::unwrap(result);
+        let count = Vec::len(entries);
+        println("Found entries:");
+        println(count);
+
+        // Print entries
+        let i = 0;
+        while i < count {
+            let name = Vec::get(entries, i);
+            println(name);
+            i = i + 1;
+        }
+    } else {
+        println("Failed to list");
+        return 1;
+    }
+
+    // Cleanup
+    File::remove("/tmp/genesis_test_dir/a.txt");
+    File::remove("/tmp/genesis_test_dir/b.txt");
+    Dir::remove(test_dir);
+
+    println("Done!");
+    0
+}
