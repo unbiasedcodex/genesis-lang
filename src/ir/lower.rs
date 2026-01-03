@@ -871,6 +871,9 @@ impl Lowerer {
             ast::TypeKind::Projection { base, assoc_name } => {
                 format!("{}::{}", self.ast_type_to_type_name(base), assoc_name)
             }
+            ast::TypeKind::TraitObject { trait_name } => {
+                format!("dyn {}", trait_name)
+            }
         }
     }
 

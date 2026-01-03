@@ -468,6 +468,7 @@ fn format_type(ty: &ast::Type) -> String {
         ast::TypeKind::Result { ok, err } => format!("Result<{}, {}>", format_type(ok), format_type(err)),
         ast::TypeKind::SelfType => "Self".to_string(),
         ast::TypeKind::Projection { base, assoc_name } => format!("{}::{}", format_type(base), assoc_name),
+        ast::TypeKind::TraitObject { trait_name } => format!("dyn {}", trait_name),
     }
 }
 

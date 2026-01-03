@@ -448,6 +448,9 @@ pub enum TypeKind {
         base: Box<Type>,
         assoc_name: String,
     },
+
+    /// Trait object: `dyn Trait`
+    TraitObject { trait_name: String },
 }
 
 // ============ Expressions ============

@@ -220,6 +220,9 @@ impl VarianceAnalyzer {
 
             // Projection: treat as invariant (complex case)
             TyKind::Projection { .. } => Variance::Invariant,
+
+            // Trait objects: invariant (erased type)
+            TyKind::TraitObject { .. } => Variance::Invariant,
         }
     }
 

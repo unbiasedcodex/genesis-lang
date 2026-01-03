@@ -300,6 +300,9 @@ impl MonomorphCollector {
             TyKind::Projection { base_ty, assoc_name, .. } => {
                 format!("{}__{}", Self::ty_to_suffix(base_ty), assoc_name)
             }
+            TyKind::TraitObject { trait_name } => {
+                format!("dyn_{}", trait_name)
+            }
         }
     }
 

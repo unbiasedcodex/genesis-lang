@@ -1332,7 +1332,15 @@ impl TypeInference {
                     _ => receiver_ty.clone(),
                 };
 
-                if let Some(method_sig) = self.ctx.find_method(&lookup_ty, &method.name).cloned() {
+                // Handle trait object method calls (dyn Trait)
+                let method_sig_opt = if let TyKind::TraitObject { trait_name } = &lookup_ty.kind {
+                    // Look up method in the trait
+                    self.ctx.find_trait_method_by_name(trait_name, &method.name).cloned()
+                } else {
+                    self.ctx.find_method(&lookup_ty, &method.name).cloned()
+                };
+
+                if let Some(method_sig) = method_sig_opt {
                     // Skip self parameter
                     let expected_params: Vec<Ty> = if method_sig.is_method && !method_sig.params.is_empty() {
                         method_sig.params[1..].to_vec()
@@ -2660,6 +2668,9 @@ impl TypeInference {
             AstTypeKind::Projection { base, assoc_name } => {
                 let base_ty = self.ast_type_to_ty(base);
                 Ty::projection(base_ty, assoc_name.clone())
+            }
+            AstTypeKind::TraitObject { trait_name } => {
+                Ty::trait_object(trait_name.clone())
             }
         }
     }

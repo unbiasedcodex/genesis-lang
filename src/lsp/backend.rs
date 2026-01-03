@@ -479,6 +479,7 @@ fn format_ast_type(ty: &genesis::ast::Type) -> String {
         genesis::ast::TypeKind::Result { ok, err } => format!("Result<{}, {}>", format_ast_type(ok), format_ast_type(err)),
         genesis::ast::TypeKind::SelfType => "Self".to_string(),
         genesis::ast::TypeKind::Projection { base, assoc_name } => format!("{}::{}", format_ast_type(base), assoc_name),
+        genesis::ast::TypeKind::TraitObject { trait_name } => format!("dyn {}", trait_name),
     }
 }
 

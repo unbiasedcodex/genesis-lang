@@ -212,6 +212,11 @@ impl Ty {
         })
     }
 
+    /// Trait object: `dyn Trait`
+    pub fn trait_object(trait_name: String) -> Self {
+        Self::new(TyKind::TraitObject { trait_name })
+    }
+
     // ============ Type Predicates ============
 
     pub fn is_var(&self) -> bool {
@@ -417,6 +422,7 @@ impl fmt::Display for Ty {
                     write!(f, "{}::{}", base_ty, assoc_name)
                 }
             }
+            TyKind::TraitObject { trait_name } => write!(f, "dyn {}", trait_name),
             TyKind::Error => write!(f, "{{error}}"),
         }
     }
@@ -479,6 +485,10 @@ pub enum TyKind {
         trait_name: Option<String>,  // Optional trait for disambiguation
         assoc_name: String,
     },
+
+    // ============ Trait Objects ============
+    /// Trait object: `dyn Trait`
+    TraitObject { trait_name: String },
 
     // ============ Error ============
     /// Error type (for error recovery)

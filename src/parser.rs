@@ -2416,6 +2416,17 @@ impl<'src> Parser<'src> {
     fn parse_type(&mut self) -> ParseResult<Type> {
         let start = self.current.span.start;
 
+        // Trait object: dyn Trait
+        if self.consume(TokenKind::Dyn) {
+            let trait_ident = self.parse_ident()?;
+            return Ok(Type {
+                kind: TypeKind::TraitObject {
+                    trait_name: trait_ident.name,
+                },
+                span: Span::new(start, self.previous.span.end),
+            });
+        }
+
         // Reference types
         if self.consume(TokenKind::And) {
             let mutable = self.consume(TokenKind::Mut);

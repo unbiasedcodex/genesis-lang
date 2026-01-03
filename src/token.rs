@@ -115,6 +115,8 @@ pub enum TokenKind {
     In,
     #[token("where")]
     Where,
+    #[token("dyn")]
+    Dyn,
 
     // Genesis-specific keywords
     #[token("actor")]
@@ -338,6 +340,7 @@ impl TokenKind {
                 | TokenKind::As
                 | TokenKind::In
                 | TokenKind::Where
+                | TokenKind::Dyn
                 | TokenKind::Actor
                 | TokenKind::Receive
                 | TokenKind::Spawn
@@ -452,6 +455,7 @@ impl fmt::Display for TokenKind {
             TokenKind::As => "as",
             TokenKind::In => "in",
             TokenKind::Where => "where",
+            TokenKind::Dyn => "dyn",
             TokenKind::Actor => "actor",
             TokenKind::Receive => "receive",
             TokenKind::Spawn => "spawn",

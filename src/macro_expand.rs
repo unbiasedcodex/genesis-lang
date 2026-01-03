@@ -1978,6 +1978,7 @@ fn token_kind_to_string(kind: &TokenKind) -> String {
 
         // Where keyword
         TokenKind::Where => "where".to_string(),
+        TokenKind::Dyn => "dyn".to_string(),
 
         // Async keywords
         TokenKind::Async => "async".to_string(),

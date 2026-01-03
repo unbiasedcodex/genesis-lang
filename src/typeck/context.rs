@@ -4912,6 +4912,14 @@ impl TypeContext {
         None
     }
 
+    /// Find a method signature directly from a trait definition
+    /// Used for trait objects (dyn Trait) where we need the trait's method signature
+    pub fn find_trait_method_by_name(&self, trait_name: &str, method_name: &str) -> Option<&FnSig> {
+        self.traits.get(trait_name).and_then(|trait_def| {
+            trait_def.methods.iter().find(|m| m.name == method_name)
+        })
+    }
+
     /// Resolve an associated type for a concrete type
     /// e.g., for `<Vec<i32> as Iterator>::Item`, returns `i32`
     pub fn resolve_associated_type(&self, ty: &Ty, trait_name: &str, assoc_type_name: &str) -> Option<Ty> {
