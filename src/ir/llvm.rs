@@ -70,11 +70,75 @@ impl<'ctx> LLVMCodegen<'ctx> {
             self.declare_function(func);
         }
 
-        // Third pass: generate code for all functions
+        // Third pass: generate vtables with actual function pointers
+        // Must happen AFTER functions are declared (so we can get function pointers)
+        // but BEFORE function bodies are compiled (so MakeTraitObject can find vtable globals)
+        self.generate_vtables(&ir_module.vtable_layouts);
+
+        // Fourth pass: generate code for all functions
         for func in &ir_module.functions {
             if !func.is_external {
                 self.compile_function(func);
             }
+        }
+    }
+
+    /// Generate vtable global constants with actual function pointers
+    fn generate_vtables(&mut self, vtable_layouts: &std::collections::HashMap<String, super::types::VTableLayout>) {
+        let ptr_type = self.context.ptr_type(AddressSpace::default());
+        let i64_type = self.context.i64_type();
+
+        for (vtable_name, layout) in vtable_layouts {
+            // VTable layout: { drop_fn: ptr, size: i64, align: i64, methods: [ptr; N] }
+            // We use a struct type to handle mixed i64 and pointer types
+            let num_methods = layout.methods.len();
+
+            // Build struct type: { ptr, i64, i64, ptr, ptr, ... }
+            let mut field_types: Vec<inkwell::types::BasicTypeEnum> = Vec::new();
+            field_types.push(ptr_type.into()); // drop_fn
+            field_types.push(i64_type.into()); // size
+            field_types.push(i64_type.into()); // align
+            for _ in 0..num_methods {
+                field_types.push(ptr_type.into()); // method pointers
+            }
+            let vtable_struct_type = self.context.struct_type(&field_types, false);
+
+            // Build struct values
+            let drop_fn = ptr_type.const_null();
+            let size_val = i64_type.const_int(layout.size as u64, false);
+            let align_val = i64_type.const_int(layout.align as u64, false);
+
+            let mut method_ptrs: Vec<inkwell::values::BasicValueEnum> = Vec::new();
+            for method_name in &layout.methods {
+                let fn_ptr = if let Some(func) = self.module.get_function(method_name) {
+                    func.as_global_value().as_pointer_value()
+                } else {
+                    // Function not found - use null (should not happen in valid code)
+                    eprintln!("WARNING: vtable method '{}' not found for {}", method_name, vtable_name);
+                    ptr_type.const_null()
+                };
+                method_ptrs.push(fn_ptr.into());
+            }
+
+            // Create struct constant
+            let mut struct_values: Vec<inkwell::values::BasicValueEnum> = Vec::new();
+            struct_values.push(drop_fn.into());
+            struct_values.push(size_val.into());
+            struct_values.push(align_val.into());
+            struct_values.extend(method_ptrs);
+
+            let vtable_const = vtable_struct_type.const_named_struct(&struct_values);
+
+            // Check if global already exists (from lowering placeholder)
+            if let Some(existing) = self.module.get_global(vtable_name) {
+                // Remove the placeholder and create a new one with proper initializer
+                unsafe { existing.delete(); }
+            }
+
+            let global = self.module.add_global(vtable_struct_type, None, vtable_name);
+            global.set_initializer(&vtable_const);
+            global.set_constant(true);
+            global.set_linkage(inkwell::module::Linkage::Private);
         }
     }
 
@@ -158,12 +222,6 @@ impl<'ctx> LLVMCodegen<'ctx> {
         self.vreg_values.clear();
         self.vreg_types.clear();
         self.block_map.clear();
-
-        eprintln!("DEBUG: Compiling function '{}' with {} blocks", func.name, func.blocks.len());
-        for (i, block) in func.blocks.iter().enumerate() {
-            eprintln!("  Block {}: id={}, {} instructions, terminator={:?}",
-                i, block.id.0, block.instructions.len(), block.terminator);
-        }
 
         let llvm_fn = self.module.get_function(&func.name).unwrap();
         self.current_fn = Some(llvm_fn);
@@ -1171,10 +1229,9 @@ impl<'ctx> LLVMCodegen<'ctx> {
                 }
             }
 
-            // ============ Trait Objects (Phase 4) ============
+            // ============ Trait Objects ============
             InstrKind::MakeTraitObject { data_ptr, vtable } => {
-                // TODO: Phase 4 - Create fat pointer struct {data_ptr, vtable_ptr}
-                // For now, return a placeholder null pointer struct
+                // Create fat pointer struct {data_ptr, vtable_ptr}
                 let ptr_type = self.context.ptr_type(AddressSpace::default());
                 let trait_obj_type = self.context.struct_type(&[ptr_type.into(), ptr_type.into()], false);
                 let data = self.get_vreg(*data_ptr).into_pointer_value();
@@ -1208,32 +1265,70 @@ impl<'ctx> LLVMCodegen<'ctx> {
             }
 
             InstrKind::VTableCall { trait_obj, method_idx, args } => {
-                // TODO: Phase 4 - Full vtable dispatch implementation
-                // For now: extract data_ptr, load method from vtable, call it
+                // Extract data_ptr and vtable_ptr from trait object fat pointer
                 let obj = self.get_vreg(*trait_obj).into_struct_value();
                 let data_ptr = self.builder.build_extract_value(obj, 0, "data_ptr").unwrap().into_pointer_value();
                 let vtable_ptr = self.builder.build_extract_value(obj, 1, "vtable_ptr").unwrap().into_pointer_value();
 
-                // Load function pointer from vtable at method_idx
+                // VTable layout: { drop_fn: ptr, size: i64, align: i64, method_0: ptr, ... }
+                // method_idx: 0=drop, 1=size, 2=align, 3+=methods
+                // We need to create a struct type for GEP. Since vtables can have variable
+                // number of methods, we use a minimal struct type that covers up to method_idx.
                 let ptr_type = self.context.ptr_type(AddressSpace::default());
-                let idx = self.context.i32_type().const_int(*method_idx as u64, false);
+                let i64_type = self.context.i64_type();
+
+                // Build struct type with enough fields for the method we want
+                let num_fields = (*method_idx as usize) + 1;
+                let mut field_types: Vec<inkwell::types::BasicTypeEnum> = Vec::new();
+                for i in 0..num_fields {
+                    match i {
+                        0 => field_types.push(ptr_type.into()), // drop_fn
+                        1 => field_types.push(i64_type.into()), // size
+                        2 => field_types.push(i64_type.into()), // align
+                        _ => field_types.push(ptr_type.into()), // method pointers
+                    }
+                }
+                let vtable_struct_type = self.context.struct_type(&field_types, false);
+
+                // Get pointer to the method field using struct GEP
+                let i32_type = self.context.i32_type();
                 let fn_ptr_ptr = unsafe {
-                    self.builder.build_gep(ptr_type, vtable_ptr, &[idx], "method_ptr_ptr").unwrap()
+                    self.builder.build_in_bounds_gep(
+                        vtable_struct_type,
+                        vtable_ptr,
+                        &[
+                            i32_type.const_int(0, false), // base struct
+                            i32_type.const_int(*method_idx as u64, false), // field index
+                        ],
+                        "method_ptr_ptr"
+                    ).unwrap()
                 };
+
+                // Load the function pointer
                 let fn_ptr = self.builder.build_load(ptr_type, fn_ptr_ptr, "method_ptr").unwrap().into_pointer_value();
 
-                // Build args: data_ptr first, then the rest
-                let mut call_args: Vec<BasicMetadataValueEnum> = vec![data_ptr.into()];
+                // The method expects self as a pointer-to-pointer because:
+                // 1. &self = &Dog in the method signature
+                // 2. Dog is heap-allocated, so Dog = *{struct}
+                // 3. &Dog = **{struct}
+                // But data_ptr is just *{struct}, so we need to allocate a slot
+                // to hold data_ptr and pass a pointer to that slot.
+                let self_slot = self.builder.build_alloca(ptr_type, "self_slot").unwrap();
+                self.builder.build_store(self_slot, data_ptr).unwrap();
+
+                // Build args: self_slot (pointer to data_ptr) first, then the rest
+                let mut call_args: Vec<BasicMetadataValueEnum> = vec![self_slot.into()];
                 for arg in args {
                     call_args.push(self.get_vreg(*arg).into());
                 }
 
-                // Create function type (simplified: returns i64, takes ptr + args)
-                // TODO: Phase 4 - Use actual method signature from trait definition
+                // Create function type (returns i64, takes ptr for self + args as i64)
+                // The actual parameter types depend on the method signature
                 let ret_type = self.context.i64_type();
-                let param_types: Vec<BasicMetadataTypeEnum> = call_args.iter()
-                    .map(|_| ptr_type.into())
-                    .collect();
+                let mut param_types: Vec<BasicMetadataTypeEnum> = vec![ptr_type.into()]; // self (ptr to ptr)
+                for _ in args {
+                    param_types.push(i64_type.into()); // other args as i64
+                }
                 let fn_type = ret_type.fn_type(&param_types, false);
 
                 // Call through function pointer

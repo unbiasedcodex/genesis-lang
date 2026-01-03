@@ -576,6 +576,11 @@ impl IrBuilder {
         });
     }
 
+    /// Set vtable layouts for trait objects
+    pub fn set_vtable_layouts(&mut self, layouts: std::collections::HashMap<String, super::types::VTableLayout>) {
+        self.module.vtable_layouts = layouts;
+    }
+
     /// Get a reference to a global variable
     pub fn global_ref(&mut self, name: &str) -> VReg {
         self.emit_with_result(InstrKind::GlobalRef(name.to_string()))

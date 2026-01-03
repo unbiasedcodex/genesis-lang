@@ -19,7 +19,7 @@ use crate::macro_expand::MacroExpander;
 
 use super::builder::IrBuilder;
 use super::instr::CmpOp;
-use super::types::{IrType, Module, VReg};
+use super::types::{IrType, Module, VReg, VTableLayout};
 
 /// Enum variant info for lowering
 #[derive(Debug, Clone)]
@@ -28,23 +28,6 @@ pub struct EnumVariantInfo {
     pub discriminant: u32,
     /// Type of payload (None for unit variants)
     pub payload_type: Option<IrType>,
-}
-
-/// VTable layout information for trait objects
-#[derive(Debug, Clone)]
-pub struct VTableLayout {
-    /// Name of the vtable global (e.g., "__vtable_Animal_Dog")
-    pub vtable_name: String,
-    /// Name of the trait
-    pub trait_name: String,
-    /// Name of the implementing type
-    pub type_name: String,
-    /// Size of the concrete type in bytes
-    pub size: usize,
-    /// Alignment of the concrete type
-    pub align: usize,
-    /// Method function names in vtable order (after drop, size, align)
-    pub methods: Vec<String>,
 }
 
 /// Lowers AST to IR
@@ -58,6 +41,8 @@ pub struct Lowerer {
     vreg_types: HashMap<VReg, IrType>,
     /// Map from function names to their parameter types
     fn_signatures: HashMap<String, Vec<IrType>>,
+    /// Map from function names to their Ty parameter types (for trait object coercion)
+    fn_param_tys: HashMap<String, Vec<Ty>>,
     /// Map from function names to their return types
     fn_return_types: HashMap<String, IrType>,
     /// Map from "EnumName::VariantName" to variant info
@@ -167,6 +152,7 @@ impl Lowerer {
             local_types: HashMap::new(),
             vreg_types: HashMap::new(),
             fn_signatures: HashMap::new(),
+            fn_param_tys: HashMap::new(),
             fn_return_types: HashMap::new(),
             enum_variants: HashMap::new(),
             enum_types: HashMap::new(),
@@ -1185,11 +1171,16 @@ impl Lowerer {
                     if self.is_generic_fn(f) {
                         continue;
                     }
-                    let param_types: Vec<IrType> = f.params
+                    let param_tys: Vec<Ty> = f.params
                         .iter()
-                        .map(|p| self.ty_to_ir_type(&self.ast_type_to_ty(&p.ty)))
+                        .map(|p| self.ast_type_to_ty(&p.ty))
+                        .collect();
+                    let param_types: Vec<IrType> = param_tys
+                        .iter()
+                        .map(|ty| self.ty_to_ir_type(ty))
                         .collect();
                     self.fn_signatures.insert(f.name.name.clone(), param_types);
+                    self.fn_param_tys.insert(f.name.name.clone(), param_tys);
                     let ret_type = f.return_type.as_ref()
                         .map(|t| self.ty_to_ir_type(&self.ast_type_to_ty(t)))
                         .unwrap_or(IrType::Void);
@@ -1207,12 +1198,17 @@ impl Lowerer {
                                 if self.is_generic_fn(f) {
                                     continue;
                                 }
-                                let param_types: Vec<IrType> = f.params
+                                let param_tys: Vec<Ty> = f.params
                                     .iter()
-                                    .map(|p| self.ty_to_ir_type(&self.ast_type_to_ty(&p.ty)))
+                                    .map(|p| self.ast_type_to_ty(&p.ty))
+                                    .collect();
+                                let param_types: Vec<IrType> = param_tys
+                                    .iter()
+                                    .map(|ty| self.ty_to_ir_type(ty))
                                     .collect();
                                 let full_name = format!("{}::{}", prefix, f.name.name);
                                 self.fn_signatures.insert(full_name.clone(), param_types);
+                                self.fn_param_tys.insert(full_name.clone(), param_tys);
                                 let ret_type = f.return_type.as_ref()
                                     .map(|t| self.ty_to_ir_type(&self.ast_type_to_ty(t)))
                                     .unwrap_or(IrType::Void);
@@ -1284,6 +1280,9 @@ impl Lowerer {
                 }
             }
         }
+
+        // Pass vtable layouts to the module for LLVM codegen
+        self.builder.set_vtable_layouts(self.vtable_layouts.clone());
 
         self.builder.finish()
     }
@@ -3102,16 +3101,34 @@ impl Lowerer {
                     qualified_name.clone()
                 };
 
-                // Lower arguments
-                let arg_vregs: Vec<VReg> = args.iter().map(|a| self.lower_expr(a)).collect();
+                // Lower arguments and get their source types from expr_types
+                let arg_vregs_and_tys: Vec<(VReg, Option<Ty>)> = args.iter()
+                    .map(|a| {
+                        let vreg = self.lower_expr(a);
+                        let ty = self.expr_types.get(&a.span).cloned();
+                        (vreg, ty)
+                    })
+                    .collect();
 
-                // Coerce arguments to match function signature
-                let arg_vregs = if let Some(param_types) = self.fn_signatures.get(&final_name).cloned() {
-                    arg_vregs.into_iter().zip(param_types.iter())
-                        .map(|(arg, expected_ty)| {
+                // Coerce arguments to match function signature (including trait object coercion)
+                let arg_vregs = if let Some(param_tys) = self.fn_param_tys.get(&final_name).cloned() {
+                    arg_vregs_and_tys.into_iter().zip(param_tys.iter())
+                        .map(|((arg, arg_src_ty), param_ty)| {
+                            // Check for trait object coercion first
+                            if let TyKind::TraitObject { trait_name } = &param_ty.kind {
+                                // Get concrete type name from source
+                                if let Some(ref src_ty) = arg_src_ty {
+                                    if let TyKind::Named { name, .. } = &src_ty.kind {
+                                        // Coerce concrete type to trait object
+                                        return self.coerce_to_trait_object(arg, name, trait_name);
+                                    }
+                                }
+                            }
+                            // Fall back to IR type coercion
+                            let expected_ir_ty = self.ty_to_ir_type(param_ty);
                             if let Some(arg_ty) = self.vreg_types.get(&arg).cloned() {
-                                if arg_ty != *expected_ty {
-                                    self.coerce_arg(arg, &arg_ty, expected_ty)
+                                if arg_ty != expected_ir_ty {
+                                    self.coerce_arg(arg, &arg_ty, &expected_ir_ty)
                                 } else {
                                     arg
                                 }
@@ -3121,7 +3138,7 @@ impl Lowerer {
                         })
                         .collect()
                 } else {
-                    arg_vregs
+                    arg_vregs_and_tys.into_iter().map(|(v, _)| v).collect()
                 };
 
                 self.builder.call(&final_name, arg_vregs)
@@ -3291,25 +3308,50 @@ impl Lowerer {
             }
 
             ExprKind::Field { object, field } => {
-                // Check if object is a heap-allocated user struct
-                let is_heap_struct = self.expr_types.get(&object.span).map_or(false, |ty| {
-                    if let crate::typeck::TyKind::Named { name, .. } = &ty.kind {
-                        // Resolve "Self" to the current impl type
-                        let resolved_name = if name == "Self" {
-                            self.current_impl_type.as_ref().unwrap_or(name)
-                        } else {
-                            name
-                        };
-                        // User-defined structs and built-in heap types
-                        self.struct_types.contains_key(resolved_name) ||
-                        resolved_name == "Option" || resolved_name == "Result" || resolved_name == "String" ||
-                        resolved_name == "Vec" || resolved_name == "HashMap" || resolved_name == "HashSet"
-                    } else {
-                        false
+                // Check if object is a heap-allocated user struct or a reference to one
+                let (is_heap_struct, is_ref_to_heap_struct) = self.expr_types.get(&object.span).map_or((false, false), |ty| {
+                    match &ty.kind {
+                        crate::typeck::TyKind::Named { name, .. } => {
+                            // Resolve "Self" to the current impl type
+                            let resolved_name = if name == "Self" {
+                                self.current_impl_type.as_ref().unwrap_or(name)
+                            } else {
+                                name
+                            };
+                            // User-defined structs and built-in heap types
+                            let is_heap = self.struct_types.contains_key(resolved_name) ||
+                                resolved_name == "Option" || resolved_name == "Result" || resolved_name == "String" ||
+                                resolved_name == "Vec" || resolved_name == "HashMap" || resolved_name == "HashSet";
+                            (is_heap, false)
+                        }
+                        crate::typeck::TyKind::Ref { inner, .. } => {
+                            // Check if inner type is a heap-allocated struct (like &self where Self = Dog)
+                            if let crate::typeck::TyKind::Named { name, .. } = &inner.kind {
+                                let resolved_name = if name == "Self" {
+                                    self.current_impl_type.as_ref().unwrap_or(name)
+                                } else {
+                                    name
+                                };
+                                let is_heap = self.struct_types.contains_key(resolved_name) ||
+                                    resolved_name == "Option" || resolved_name == "Result" || resolved_name == "String" ||
+                                    resolved_name == "Vec" || resolved_name == "HashMap" || resolved_name == "HashSet";
+                                (false, is_heap)
+                            } else {
+                                (false, false)
+                            }
+                        }
+                        _ => (false, false)
                     }
                 });
 
-                let struct_ptr = if is_heap_struct {
+                let struct_ptr = if is_ref_to_heap_struct {
+                    // For references to heap-allocated structs (like &self where self: Dog)
+                    // 1. Load the reference (pointer to Dog pointer) from the slot
+                    // 2. Load the Dog pointer from that reference
+                    let slot = self.lower_expr_place(object);
+                    let ref_val = self.builder.load(slot);  // This is the &Dog value (ptr to ptr)
+                    self.builder.load(ref_val)  // Load the Dog pointer
+                } else if is_heap_struct {
                     // For heap-allocated structs, load the pointer from the slot
                     // and convert i64 to pointer (opaque pointer handling)
                     let slot = self.lower_expr_place(object);
@@ -3647,25 +3689,50 @@ impl Lowerer {
                 }
             }
             ExprKind::Field { object, field } => {
-                // Check if object is a heap-allocated user struct
-                let is_heap_struct = self.expr_types.get(&object.span).map_or(false, |ty| {
-                    if let crate::typeck::TyKind::Named { name, .. } = &ty.kind {
-                        // Resolve "Self" to the current impl type
-                        let resolved_name = if name == "Self" {
-                            self.current_impl_type.as_ref().unwrap_or(name)
-                        } else {
-                            name
-                        };
-                        // User-defined structs and built-in heap types
-                        self.struct_types.contains_key(resolved_name) ||
-                        resolved_name == "Option" || resolved_name == "Result" || resolved_name == "String" ||
-                        resolved_name == "Vec" || resolved_name == "HashMap" || resolved_name == "HashSet"
-                    } else {
-                        false
+                // Check if object is a heap-allocated user struct or a reference to one
+                let (is_heap_struct, is_ref_to_heap_struct) = self.expr_types.get(&object.span).map_or((false, false), |ty| {
+                    match &ty.kind {
+                        crate::typeck::TyKind::Named { name, .. } => {
+                            // Resolve "Self" to the current impl type
+                            let resolved_name = if name == "Self" {
+                                self.current_impl_type.as_ref().unwrap_or(name)
+                            } else {
+                                name
+                            };
+                            // User-defined structs and built-in heap types
+                            let is_heap = self.struct_types.contains_key(resolved_name) ||
+                                resolved_name == "Option" || resolved_name == "Result" || resolved_name == "String" ||
+                                resolved_name == "Vec" || resolved_name == "HashMap" || resolved_name == "HashSet";
+                            (is_heap, false)
+                        }
+                        crate::typeck::TyKind::Ref { inner, .. } => {
+                            // Check if inner type is a heap-allocated struct (like &self where Self = Dog)
+                            if let crate::typeck::TyKind::Named { name, .. } = &inner.kind {
+                                let resolved_name = if name == "Self" {
+                                    self.current_impl_type.as_ref().unwrap_or(name)
+                                } else {
+                                    name
+                                };
+                                let is_heap = self.struct_types.contains_key(resolved_name) ||
+                                    resolved_name == "Option" || resolved_name == "Result" || resolved_name == "String" ||
+                                    resolved_name == "Vec" || resolved_name == "HashMap" || resolved_name == "HashSet";
+                                (false, is_heap)
+                            } else {
+                                (false, false)
+                            }
+                        }
+                        _ => (false, false)
                     }
                 });
 
-                let struct_ptr = if is_heap_struct {
+                let struct_ptr = if is_ref_to_heap_struct {
+                    // For references to heap-allocated structs (like &self where self: Dog)
+                    // 1. Load the reference (pointer to Dog pointer) from the slot
+                    // 2. Load the Dog pointer from that reference
+                    let slot = self.lower_expr_place(object);
+                    let ref_val = self.builder.load(slot);  // This is the &Dog value (ptr to ptr)
+                    self.builder.load(ref_val)  // Load the Dog pointer
+                } else if is_heap_struct {
                     // For heap-allocated structs, load the pointer from the slot
                     // and convert i64 to pointer (opaque pointer handling)
                     let slot = self.lower_expr_place(object);
@@ -12065,6 +12132,10 @@ impl Lowerer {
             }
             TypeKind::Never => Ty::never(),
             TypeKind::Infer => Ty::i64(), // Default for inferred
+            TypeKind::TraitObject { trait_name } => {
+                // dyn Trait types
+                Ty::trait_object(trait_name.clone())
+            }
             _ => Ty::i64(), // Default
         }
     }

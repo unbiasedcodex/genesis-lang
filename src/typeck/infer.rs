@@ -672,6 +672,22 @@ impl TypeInference {
         Ok(())
     }
 
+    /// Check if a concrete type implements a trait (for trait object coercion)
+    fn type_implements_trait(&self, ty: &Ty, trait_name: &str) -> bool {
+        use crate::typeck::check::satisfies_bound;
+
+        // Apply unifier to get resolved type
+        let resolved_ty = self.unifier.apply(ty);
+
+        // Check built-in traits first
+        if satisfies_bound(&resolved_ty, trait_name) {
+            return true;
+        }
+
+        // Check user-defined trait implementations
+        self.ctx.implements_trait(&resolved_ty, trait_name)
+    }
+
     // ============ Checking Phase ============
 
     pub fn check_function(&mut self, f: &FnDef, ownership: &mut OwnershipChecker) -> TypeResult<()> {
@@ -1279,6 +1295,14 @@ impl TypeInference {
                         let instantiated_ret = self.instantiate_generics_with_tracking(ret, &mut generic_vars);
 
                         for (param, arg) in instantiated_params.iter().zip(arg_tys.iter()) {
+                            // Check for trait object coercion: T -> dyn Trait
+                            if let TyKind::TraitObject { trait_name } = &param.kind {
+                                // Check if arg type implements the trait
+                                if self.type_implements_trait(arg, trait_name) {
+                                    // Coercion is allowed, no unification needed
+                                    continue;
+                                }
+                            }
                             self.unify_with_alias_expansion(param, arg, span)?;
                         }
 

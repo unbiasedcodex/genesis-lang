@@ -2,6 +2,7 @@
 //!
 //! Type representations for the Genesis IR.
 
+use std::collections::HashMap;
 use std::fmt;
 
 /// A virtual register (SSA value)
@@ -133,6 +134,23 @@ impl fmt::Display for IrType {
     }
 }
 
+/// VTable layout information for trait objects
+#[derive(Debug, Clone)]
+pub struct VTableLayout {
+    /// Name of the vtable global (e.g., "__vtable_Animal_Dog")
+    pub vtable_name: String,
+    /// Name of the trait
+    pub trait_name: String,
+    /// Name of the implementing type
+    pub type_name: String,
+    /// Size of the concrete type in bytes
+    pub size: usize,
+    /// Alignment of the concrete type
+    pub align: usize,
+    /// Method function names in vtable order (after drop, size, align)
+    pub methods: Vec<String>,
+}
+
 /// A module contains functions and global definitions
 #[derive(Debug, Clone)]
 pub struct Module {
@@ -140,6 +158,8 @@ pub struct Module {
     pub functions: Vec<Function>,
     pub globals: Vec<Global>,
     pub structs: Vec<StructDef>,
+    /// VTable layouts for trait objects
+    pub vtable_layouts: HashMap<String, VTableLayout>,
 }
 
 impl Module {
@@ -149,6 +169,7 @@ impl Module {
             functions: Vec::new(),
             globals: Vec::new(),
             structs: Vec::new(),
+            vtable_layouts: HashMap::new(),
         }
     }
 }
