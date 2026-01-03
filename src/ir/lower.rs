@@ -636,6 +636,11 @@ impl Lowerer {
                     // call the type-specific destructor instead of rc_release
                     let base_type = entry.type_name.split('<').next().unwrap_or(&entry.type_name);
 
+                    // Check if local is stored as pointer or i64
+                    let local_is_ptr = self.local_types.get(&entry.name).map_or(false, |ty| {
+                        matches!(ty, IrType::Ptr(_))
+                    });
+
                     match base_type {
                         "String" => {
                             // Check if this is a pointer local (struct allocated directly)
@@ -644,8 +649,14 @@ impl Lowerer {
                                 // Direct struct pointer - convert to i64
                                 self.builder.ptrtoint(slot, IrType::I64)
                             } else {
-                                // Pointer stored in slot - load it (already i64)
-                                self.builder.load(slot)
+                                // Pointer stored in slot - load it
+                                let loaded = self.builder.load(slot);
+                                // Convert to i64 if it's a pointer, otherwise use as is
+                                if local_is_ptr {
+                                    self.builder.ptrtoint(loaded, IrType::I64)
+                                } else {
+                                    loaded // Already i64
+                                }
                             };
                             self.builder.call("__drop_string", vec![ptr_val]);
                         }
@@ -656,8 +667,14 @@ impl Lowerer {
                                 // Direct struct pointer - convert to i64
                                 self.builder.ptrtoint(slot, IrType::I64)
                             } else {
-                                // Pointer stored in slot - load it (already i64)
-                                self.builder.load(slot)
+                                // Pointer stored in slot - load it
+                                let loaded = self.builder.load(slot);
+                                // Convert to i64 if it's a pointer, otherwise use as is
+                                if local_is_ptr {
+                                    self.builder.ptrtoint(loaded, IrType::I64)
+                                } else {
+                                    loaded // Already i64
+                                }
                             };
                             self.builder.call("__drop_vec", vec![ptr_val]);
                         }
@@ -665,7 +682,12 @@ impl Lowerer {
                             let ptr_val = if self.ptr_locals.contains(&entry.name) {
                                 self.builder.ptrtoint(slot, IrType::I64)
                             } else {
-                                self.builder.load(slot)
+                                let loaded = self.builder.load(slot);
+                                if local_is_ptr {
+                                    self.builder.ptrtoint(loaded, IrType::I64)
+                                } else {
+                                    loaded
+                                }
                             };
                             self.builder.call("__drop_hashmap", vec![ptr_val]);
                         }
@@ -673,7 +695,12 @@ impl Lowerer {
                             let ptr_val = if self.ptr_locals.contains(&entry.name) {
                                 self.builder.ptrtoint(slot, IrType::I64)
                             } else {
-                                self.builder.load(slot)
+                                let loaded = self.builder.load(slot);
+                                if local_is_ptr {
+                                    self.builder.ptrtoint(loaded, IrType::I64)
+                                } else {
+                                    loaded
+                                }
                             };
                             self.builder.call("__drop_hashset", vec![ptr_val]);
                         }
@@ -681,7 +708,12 @@ impl Lowerer {
                             let ptr_val = if self.ptr_locals.contains(&entry.name) {
                                 self.builder.ptrtoint(slot, IrType::I64)
                             } else {
-                                self.builder.load(slot)
+                                let loaded = self.builder.load(slot);
+                                if local_is_ptr {
+                                    self.builder.ptrtoint(loaded, IrType::I64)
+                                } else {
+                                    loaded
+                                }
                             };
                             self.builder.call("__drop_file", vec![ptr_val]);
                         }
@@ -692,7 +724,11 @@ impl Lowerer {
                             } else {
                                 self.builder.load(slot)
                             };
-                            let ptr_val = self.builder.ptrtoint(ptr, IrType::I64);
+                            let ptr_val = if local_is_ptr {
+                                self.builder.ptrtoint(ptr, IrType::I64)
+                            } else {
+                                ptr
+                            };
                             self.builder.call("__drop_box", vec![ptr_val]);
                         }
                         _ => {
@@ -722,6 +758,26 @@ impl Lowerer {
 
     /// Get the source type name for an expression (from type checker)
     fn get_expr_type_name(&self, expr: &Expr) -> String {
+        // Special case: Vec::get returns element type, not i64
+        if let ExprKind::Call { func, args } = &expr.kind {
+            if let ExprKind::Path(path) = &func.kind {
+                let func_name = path.segments.iter()
+                    .map(|s| s.ident.name.clone())
+                    .collect::<Vec<_>>()
+                    .join("::");
+                if func_name == "Vec::get" && !args.is_empty() {
+                    // Get element type from Vec<T>
+                    if let Some(ty) = self.expr_types.get(&args[0].span) {
+                        if let crate::typeck::TyKind::Named { name, generics, .. } = &ty.kind {
+                            if name == "Vec" && !generics.is_empty() {
+                                return self.ty_to_type_name(&generics[0]);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if let Some(ty) = self.expr_types.get(&expr.span) {
             self.ty_to_type_name(ty)
         } else {
@@ -3712,19 +3768,21 @@ impl Lowerer {
             return self.builder.const_int(0);
         }
 
-        // Check if element type is a pointer type (String, Vec, etc.)
-        let elem_is_ptr = self.expr_types.get(&args[0].span).map_or(false, |ty| {
+        // Get element type info from Vec<T>
+        let elem_type_info = self.expr_types.get(&args[0].span).and_then(|ty| {
             if let crate::typeck::TyKind::Named { name, generics, .. } = &ty.kind {
                 if name == "Vec" && !generics.is_empty() {
-                    // Check if Vec's element type is a pointer type
                     if let crate::typeck::TyKind::Named { name: elem_name, .. } = &generics[0].kind {
-                        return elem_name == "String" || elem_name == "Vec" ||
-                               elem_name == "HashMap" || elem_name == "HashSet" ||
-                               elem_name == "Box";
+                        return Some(elem_name.clone());
                     }
                 }
             }
-            false
+            None
+        });
+
+        let elem_is_ptr = elem_type_info.as_ref().map_or(false, |name| {
+            name == "String" || name == "Vec" || name == "HashMap" ||
+            name == "HashSet" || name == "Box"
         });
 
         // Vec may be stored as i64 (from Result::unwrap), convert to pointer
@@ -3740,9 +3798,20 @@ impl Lowerer {
         let elem_ptr = self.builder.get_element_ptr(data_ptr, index);
         let loaded = self.builder.load(elem_ptr);
 
-        // If element type is a pointer, convert i64 back to pointer
+        // If element type is a pointer, convert i64 back to TYPED pointer
         if elem_is_ptr {
-            self.builder.inttoptr(loaded, IrType::Ptr(Box::new(IrType::I8)))
+            let elem_ir_type = match elem_type_info.as_deref() {
+                Some("String") => IrType::Ptr(Box::new(self.string_struct_type())),
+                Some("Vec") => IrType::Ptr(Box::new(self.vec_struct_type())),
+                Some("HashMap") => IrType::Ptr(Box::new(self.hashmap_struct_type())),
+                Some("HashSet") => IrType::Ptr(Box::new(self.hashset_struct_type())),
+                Some("Box") => IrType::Ptr(Box::new(IrType::I64)),
+                _ => IrType::Ptr(Box::new(IrType::I8)),
+            };
+            let result = self.builder.inttoptr(loaded, elem_ir_type.clone());
+            // Register the type for later use (println, drop, etc.)
+            self.vreg_types.insert(result, elem_ir_type);
+            result
         } else {
             loaded
         }
@@ -7803,8 +7872,8 @@ impl Lowerer {
                     }
                 }
                 _ => {
-                    // Check if this is a String type
-                    let is_string = self.expr_types.get(&arg.span).map_or(false, |ty| {
+                    // Check if this is a String type (from expr_types)
+                    let is_string_from_expr = self.expr_types.get(&arg.span).map_or(false, |ty| {
                         if let crate::typeck::TyKind::Named { name, .. } = &ty.kind {
                             name == "String"
                         } else {
@@ -7812,9 +7881,31 @@ impl Lowerer {
                         }
                     });
 
+                    // Lower the expression first so we can check vreg_types
+                    let val = self.lower_expr(arg);
+
+                    // Also check vreg_types for propagated String pointers (from Vec::get, etc.)
+                    let is_string_from_vreg = self.vreg_types.get(&val).map_or(false, |ty| {
+                        if let IrType::Ptr(inner) = ty {
+                            // Check if it's a pointer to String struct (3 fields: ptr, len, cap)
+                            if let IrType::Struct(fields) = inner.as_ref() {
+                                fields.len() == 3 &&
+                                matches!(&fields[0], IrType::Ptr(_)) &&
+                                matches!(&fields[1], IrType::I64) &&
+                                matches!(&fields[2], IrType::I64)
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        }
+                    });
+
+                    let is_string = is_string_from_expr || is_string_from_vreg;
+
                     if is_string {
-                        // Get the String pointer
-                        let string_ptr = self.lower_expr(arg);
+                        // Use the already-lowered value as String pointer
+                        let string_ptr = val;
                         // Get pointer to data field (field 0 of String struct)
                         let data_ptr_ptr = self.builder.get_field_ptr(string_ptr, 0);
                         // Load the actual char pointer
@@ -7833,7 +7924,7 @@ impl Lowerer {
                         self.builder.call("printf", vec![fmt_ptr, len, data_ptr])
                     } else {
                         // For other types, use printf with format string
-                        let val = self.lower_expr(arg);
+                        // (val already lowered above)
 
                         // Determine format string based on type
                         // First check expr_types (type checker info), then fallback to vreg_types (IR info)
