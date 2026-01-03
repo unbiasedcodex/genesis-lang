@@ -1170,6 +1170,76 @@ impl<'ctx> LLVMCodegen<'ctx> {
                     Some(self.context.ptr_type(AddressSpace::default()).const_null().into())
                 }
             }
+
+            // ============ Trait Objects (Phase 4) ============
+            InstrKind::MakeTraitObject { data_ptr, vtable } => {
+                // TODO: Phase 4 - Create fat pointer struct {data_ptr, vtable_ptr}
+                // For now, return a placeholder null pointer struct
+                let ptr_type = self.context.ptr_type(AddressSpace::default());
+                let trait_obj_type = self.context.struct_type(&[ptr_type.into(), ptr_type.into()], false);
+                let data = self.get_vreg(*data_ptr).into_pointer_value();
+
+                // Get vtable global
+                let vtable_ptr = if let Some(global) = self.module.get_global(vtable) {
+                    global.as_pointer_value()
+                } else {
+                    ptr_type.const_null()
+                };
+
+                // Build struct
+                let mut obj = trait_obj_type.const_zero();
+                obj = self.builder.build_insert_value(obj, data, 0, "tobj.data").unwrap().into_struct_value();
+                obj = self.builder.build_insert_value(obj, vtable_ptr, 1, "tobj.vtable").unwrap().into_struct_value();
+                Some(obj.into())
+            }
+
+            InstrKind::GetDataPtr(trait_obj) => {
+                // Extract data pointer (field 0) from trait object
+                let obj = self.get_vreg(*trait_obj).into_struct_value();
+                let data_ptr = self.builder.build_extract_value(obj, 0, "data_ptr").unwrap();
+                Some(data_ptr)
+            }
+
+            InstrKind::GetVTablePtr(trait_obj) => {
+                // Extract vtable pointer (field 1) from trait object
+                let obj = self.get_vreg(*trait_obj).into_struct_value();
+                let vtable_ptr = self.builder.build_extract_value(obj, 1, "vtable_ptr").unwrap();
+                Some(vtable_ptr)
+            }
+
+            InstrKind::VTableCall { trait_obj, method_idx, args } => {
+                // TODO: Phase 4 - Full vtable dispatch implementation
+                // For now: extract data_ptr, load method from vtable, call it
+                let obj = self.get_vreg(*trait_obj).into_struct_value();
+                let data_ptr = self.builder.build_extract_value(obj, 0, "data_ptr").unwrap().into_pointer_value();
+                let vtable_ptr = self.builder.build_extract_value(obj, 1, "vtable_ptr").unwrap().into_pointer_value();
+
+                // Load function pointer from vtable at method_idx
+                let ptr_type = self.context.ptr_type(AddressSpace::default());
+                let idx = self.context.i32_type().const_int(*method_idx as u64, false);
+                let fn_ptr_ptr = unsafe {
+                    self.builder.build_gep(ptr_type, vtable_ptr, &[idx], "method_ptr_ptr").unwrap()
+                };
+                let fn_ptr = self.builder.build_load(ptr_type, fn_ptr_ptr, "method_ptr").unwrap().into_pointer_value();
+
+                // Build args: data_ptr first, then the rest
+                let mut call_args: Vec<BasicMetadataValueEnum> = vec![data_ptr.into()];
+                for arg in args {
+                    call_args.push(self.get_vreg(*arg).into());
+                }
+
+                // Create function type (simplified: returns i64, takes ptr + args)
+                // TODO: Phase 4 - Use actual method signature from trait definition
+                let ret_type = self.context.i64_type();
+                let param_types: Vec<BasicMetadataTypeEnum> = call_args.iter()
+                    .map(|_| ptr_type.into())
+                    .collect();
+                let fn_type = ret_type.fn_type(&param_types, false);
+
+                // Call through function pointer
+                let result = self.builder.build_indirect_call(fn_type, fn_ptr, &call_args, "vtable_call").unwrap();
+                result.try_as_basic_value().left()
+            }
         };
 
         // Store result if instruction has one

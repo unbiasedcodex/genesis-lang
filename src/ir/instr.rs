@@ -169,6 +169,29 @@ pub enum InstrKind {
         args: Vec<VReg>,
     },
 
+    // ============ Trait Objects ============
+    /// Create a trait object (fat pointer) from data pointer and vtable name
+    /// Result is a struct { data_ptr: *void, vtable_ptr: *VTable }
+    MakeTraitObject {
+        /// Pointer to the concrete data (will be auto-boxed if needed)
+        data_ptr: VReg,
+        /// Name of the vtable global constant (e.g., "__vtable_Animal_Dog")
+        vtable: String,
+    },
+    /// Extract data pointer from trait object (field 0)
+    GetDataPtr(VReg),
+    /// Extract vtable pointer from trait object (field 1)
+    GetVTablePtr(VReg),
+    /// Call method through vtable
+    VTableCall {
+        /// The trait object (fat pointer)
+        trait_obj: VReg,
+        /// Method index in vtable (0=drop, 1=size, 2=align, 3+=methods)
+        method_idx: u32,
+        /// Arguments (data_ptr is automatically prepended as first arg)
+        args: Vec<VReg>,
+    },
+
     // ============ Misc ============
     /// Phi node for SSA form
     Phi(Vec<(VReg, BlockId)>),
@@ -320,6 +343,21 @@ impl fmt::Display for Instruction {
             }
             InstrKind::CallPtr { ptr, args } => {
                 write!(f, "callptr {}(", ptr)?;
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", arg)?;
+                }
+                write!(f, ")")
+            }
+            InstrKind::MakeTraitObject { data_ptr, vtable } => {
+                write!(f, "make_trait_object {}, @{}", data_ptr, vtable)
+            }
+            InstrKind::GetDataPtr(v) => write!(f, "get_data_ptr {}", v),
+            InstrKind::GetVTablePtr(v) => write!(f, "get_vtable_ptr {}", v),
+            InstrKind::VTableCall { trait_obj, method_idx, args } => {
+                write!(f, "vtable_call {}[{}](", trait_obj, method_idx)?;
                 for (i, arg) in args.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;

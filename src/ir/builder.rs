@@ -927,6 +927,55 @@ impl IrBuilder {
         })
     }
 
+    // ============ Trait Objects ============
+
+    /// Create a trait object (fat pointer) from data pointer and vtable
+    ///
+    /// The result is a struct containing {data_ptr, vtable_ptr}.
+    /// The vtable parameter is the name of the global vtable constant.
+    pub fn make_trait_object(&mut self, data_ptr: VReg, vtable: impl Into<String>) -> VReg {
+        self.emit_with_result(InstrKind::MakeTraitObject {
+            data_ptr,
+            vtable: vtable.into(),
+        })
+    }
+
+    /// Extract data pointer from trait object (field 0)
+    pub fn get_data_ptr(&mut self, trait_obj: VReg) -> VReg {
+        self.emit_with_result(InstrKind::GetDataPtr(trait_obj))
+    }
+
+    /// Extract vtable pointer from trait object (field 1)
+    pub fn get_vtable_ptr(&mut self, trait_obj: VReg) -> VReg {
+        self.emit_with_result(InstrKind::GetVTablePtr(trait_obj))
+    }
+
+    /// Call method through vtable
+    ///
+    /// The method_idx is the index into the vtable:
+    /// - 0: drop function
+    /// - 1: size
+    /// - 2: align
+    /// - 3+: trait methods in declaration order
+    ///
+    /// The data_ptr is automatically extracted and prepended as the first argument.
+    pub fn vtable_call(&mut self, trait_obj: VReg, method_idx: u32, args: Vec<VReg>) -> VReg {
+        self.emit_with_result(InstrKind::VTableCall {
+            trait_obj,
+            method_idx,
+            args,
+        })
+    }
+
+    /// Call method through vtable (void return)
+    pub fn vtable_call_void(&mut self, trait_obj: VReg, method_idx: u32, args: Vec<VReg>) {
+        self.emit(None, InstrKind::VTableCall {
+            trait_obj,
+            method_idx,
+            args,
+        });
+    }
+
     // ============ Control Flow ============
 
     pub fn select(&mut self, cond: VReg, then_val: VReg, else_val: VReg) -> VReg {
