@@ -30,6 +30,23 @@ pub struct EnumVariantInfo {
     pub payload_type: Option<IrType>,
 }
 
+/// VTable layout information for trait objects
+#[derive(Debug, Clone)]
+pub struct VTableLayout {
+    /// Name of the vtable global (e.g., "__vtable_Animal_Dog")
+    pub vtable_name: String,
+    /// Name of the trait
+    pub trait_name: String,
+    /// Name of the implementing type
+    pub type_name: String,
+    /// Size of the concrete type in bytes
+    pub size: usize,
+    /// Alignment of the concrete type
+    pub align: usize,
+    /// Method function names in vtable order (after drop, size, align)
+    pub methods: Vec<String>,
+}
+
 /// Lowers AST to IR
 pub struct Lowerer {
     builder: IrBuilder,
@@ -95,6 +112,14 @@ pub struct Lowerer {
     current_impl_type: Option<String>,
     /// Global constants: const_name -> (global_ir_name, type)
     global_consts: HashMap<String, (String, IrType)>,
+
+    // ============ Trait Objects ============
+    /// Trait definitions: trait_name -> [method_names in order]
+    trait_defs: HashMap<String, Vec<String>>,
+    /// Trait implementations: (trait_name, type_name) -> [qualified_method_names in trait method order]
+    trait_impls: HashMap<(String, String), Vec<String>>,
+    /// VTable layouts: vtable_name -> VTableLayout
+    vtable_layouts: HashMap<String, VTableLayout>,
 }
 
 /// Information about a closure that needs to be generated
@@ -172,6 +197,10 @@ impl Lowerer {
             current_impl_type: None,
             // Global constants
             global_consts: HashMap::new(),
+            // Trait Objects
+            trait_defs: HashMap::new(),
+            trait_impls: HashMap::new(),
+            vtable_layouts: HashMap::new(),
         }
     }
 
@@ -298,6 +327,228 @@ impl Lowerer {
                 _ => {}
             }
         }
+    }
+
+    // ============ Trait Object Support ============
+
+    /// Collect trait definitions from the AST
+    fn collect_trait_defs(&mut self, program: &Program) {
+        for item in &program.items {
+            match item {
+                Item::Trait(t) => {
+                    // Collect method names in definition order
+                    let method_names: Vec<String> = t.items.iter()
+                        .filter_map(|item| {
+                            if let ast::TraitItem::Function(sig) = item {
+                                Some(sig.name.name.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    self.trait_defs.insert(t.name.name.clone(), method_names);
+                }
+                Item::Mod(m) => {
+                    if let Some(ref items) = m.items {
+                        let sub_program = Program {
+                            items: items.clone(),
+                            span: m.span,
+                        };
+                        self.collect_trait_defs(&sub_program);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Collect trait implementations from the AST
+    fn collect_trait_impls(&mut self, program: &Program) {
+        for item in &program.items {
+            match item {
+                Item::Impl(i) => {
+                    // Only process trait implementations (not inherent impls)
+                    if let Some(ref trait_ty) = i.trait_ {
+                        let trait_name = self.ast_type_to_type_name(trait_ty);
+                        let type_name = self.ast_type_to_type_name(&i.self_type);
+
+                        // Get trait method order
+                        if let Some(trait_methods) = self.trait_defs.get(&trait_name).cloned() {
+                            // Build qualified method names in trait method order
+                            let qualified_methods: Vec<String> = trait_methods.iter()
+                                .map(|method_name| format!("{}::{}", type_name, method_name))
+                                .collect();
+                            self.trait_impls.insert((trait_name, type_name), qualified_methods);
+                        }
+                    }
+                }
+                Item::Mod(m) => {
+                    if let Some(ref items) = m.items {
+                        let sub_program = Program {
+                            items: items.clone(),
+                            span: m.span,
+                        };
+                        self.collect_trait_impls(&sub_program);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Generate vtable constants for all trait implementations
+    fn generate_vtables(&mut self) {
+        use super::types::Constant;
+
+        // Clone keys to avoid borrow issues
+        let impl_keys: Vec<(String, String)> = self.trait_impls.keys().cloned().collect();
+
+        for (trait_name, type_name) in impl_keys {
+            let vtable_name = format!("__vtable_{}_{}", trait_name, type_name);
+
+            // Get method names from the impl
+            let methods = self.trait_impls.get(&(trait_name.clone(), type_name.clone()))
+                .cloned()
+                .unwrap_or_default();
+
+            // Calculate size and alignment (using struct_types if available)
+            let (size, align) = self.get_type_size_align(&type_name);
+
+            // Create VTable layout
+            let layout = VTableLayout {
+                vtable_name: vtable_name.clone(),
+                trait_name: trait_name.clone(),
+                type_name: type_name.clone(),
+                size,
+                align,
+                methods: methods.clone(),
+            };
+            self.vtable_layouts.insert(vtable_name.clone(), layout);
+
+            // Generate vtable global constant
+            // VTable layout: [drop_fn, size, align, method_0, method_1, ...]
+            // For now, we use function pointers stored as i64
+            let num_entries = 3 + methods.len(); // drop + size + align + methods
+            let vtable_ty = IrType::Array(Box::new(IrType::I64), num_entries);
+
+            // Build vtable entries as constants
+            // Note: actual function pointers will be resolved at LLVM codegen time
+            // For now, store placeholder values (0 for drop, size, align, then method indices)
+            let mut entries = Vec::new();
+            entries.push(Constant::Int(0)); // drop_fn placeholder (will be filled by codegen)
+            entries.push(Constant::Int(size as i64));
+            entries.push(Constant::Int(align as i64));
+            // Method entries are indices into the vtable for now
+            // Actual function pointers will be resolved during LLVM codegen
+            for _ in &methods {
+                entries.push(Constant::Int(0)); // placeholder
+            }
+
+            self.builder.add_global(
+                vtable_name,
+                vtable_ty,
+                Some(Constant::Array(entries)),
+                true, // is_const
+            );
+        }
+    }
+
+    /// Get size and alignment for a type (helper for vtable generation)
+    fn get_type_size_align(&self, type_name: &str) -> (usize, usize) {
+        // Check if it's a known struct type
+        if let Some(ir_ty) = self.struct_types.get(type_name) {
+            let size = ir_ty.size();
+            let align = 8; // Default alignment for heap-allocated structs
+            return (size, align);
+        }
+
+        // Check specialized structs
+        if let Some(fields) = self.specialized_structs.get(type_name) {
+            let size: usize = fields.iter().map(|(_, ty)| ty.size()).sum();
+            let align = 8;
+            return (size, align);
+        }
+
+        // Default for unknown types (assume pointer-sized)
+        (8, 8)
+    }
+
+    /// Check if a type is a trait object (dyn Trait)
+    fn is_trait_object(&self, ty: &Ty) -> bool {
+        matches!(&ty.kind, TyKind::TraitObject { .. })
+    }
+
+    /// Get the trait name from a trait object type
+    fn get_trait_object_name(&self, ty: &Ty) -> Option<String> {
+        match &ty.kind {
+            TyKind::TraitObject { trait_name } => Some(trait_name.clone()),
+            _ => None,
+        }
+    }
+
+    /// Get the method index in a trait's vtable (after drop, size, align)
+    fn get_trait_method_index(&self, trait_name: &str, method_name: &str) -> Option<u32> {
+        self.trait_defs.get(trait_name).and_then(|methods| {
+            methods.iter()
+                .position(|m| m == method_name)
+                .map(|idx| (idx + 3) as u32) // +3 for drop, size, align
+        })
+    }
+
+    /// Get vtable name for a (trait, type) pair
+    fn get_vtable_name(&self, trait_name: &str, type_name: &str) -> String {
+        format!("__vtable_{}_{}", trait_name, type_name)
+    }
+
+    /// Coerce a concrete value to a trait object (creates fat pointer)
+    /// Returns the trait object VReg if coercion was needed, or the original value if not
+    fn coerce_to_trait_object(&mut self, value: VReg, concrete_type: &str, trait_name: &str) -> VReg {
+        // Get or generate vtable name
+        let vtable_name = self.get_vtable_name(trait_name, concrete_type);
+
+        // Check if vtable exists
+        if !self.vtable_layouts.contains_key(&vtable_name) {
+            // VTable not found - return value as-is (should not happen in well-typed code)
+            return value;
+        }
+
+        // Create the trait object fat pointer using MakeTraitObject
+        // The value is already a pointer to the concrete data (heap-allocated struct)
+        self.builder.make_trait_object(value, &vtable_name)
+    }
+
+    /// Check if this is a trait object coercion and perform it if needed
+    /// Returns the (possibly coerced) value
+    fn maybe_coerce_to_trait_object(
+        &mut self,
+        value: VReg,
+        source_ty: Option<&Ty>,
+        target_ty: Option<&Ty>,
+    ) -> VReg {
+        // Check if target type is a trait object
+        let trait_name = match target_ty {
+            Some(ty) => self.get_trait_object_name(ty),
+            None => return value,
+        };
+
+        let trait_name = match trait_name {
+            Some(name) => name,
+            None => return value, // Target is not a trait object
+        };
+
+        // Get the concrete type name from source
+        let concrete_type = match source_ty {
+            Some(ty) => {
+                match &ty.kind {
+                    TyKind::Named { name, .. } => name.clone(),
+                    _ => return value, // Source is not a named type
+                }
+            }
+            None => return value,
+        };
+
+        // Perform the coercion
+        self.coerce_to_trait_object(value, &concrete_type, &trait_name)
     }
 
     /// Generate specialized struct definitions from monomorphization info
@@ -909,6 +1160,13 @@ impl Lowerer {
 
         // Generate specialized structs from monomorphization info
         self.generate_specialized_structs();
+
+        // Collect trait definitions and implementations for trait objects
+        self.collect_trait_defs(program);
+        self.collect_trait_impls(program);
+
+        // Generate vtable constants for all trait implementations
+        self.generate_vtables();
 
         // Collect generic function definitions
         self.collect_generic_fn_defs(program);
@@ -2975,35 +3233,61 @@ impl Lowerer {
             }
 
             ExprKind::MethodCall { receiver, method, args } => {
-                // Get the receiver type to construct qualified method name
-                let type_name = self.expr_types.get(&receiver.span).map(|ty| {
-                    if let crate::typeck::TyKind::Named { name, .. } = &ty.kind {
-                        // Resolve "Self" to the current impl type
-                        if name == "Self" {
-                            self.current_impl_type.clone().unwrap_or_else(|| name.clone())
+                // Check if receiver is a trait object (dyn Trait)
+                let receiver_ty = self.expr_types.get(&receiver.span).cloned();
+                let is_trait_obj = receiver_ty.as_ref()
+                    .map(|ty| self.is_trait_object(ty))
+                    .unwrap_or(false);
+
+                if is_trait_obj {
+                    // Trait object: use vtable dispatch
+                    let trait_name = receiver_ty.as_ref()
+                        .and_then(|ty| self.get_trait_object_name(ty))
+                        .unwrap_or_else(|| "unknown".to_string());
+
+                    // Get method index in vtable
+                    let method_idx = self.get_trait_method_index(&trait_name, &method.name)
+                        .unwrap_or(3); // Default to first method slot
+
+                    // Lower the receiver (trait object fat pointer)
+                    let trait_obj = self.lower_expr(receiver);
+
+                    // Lower all other arguments
+                    let arg_vregs: Vec<VReg> = args.iter().map(|a| self.lower_expr(a)).collect();
+
+                    // Emit VTableCall instruction
+                    self.builder.vtable_call(trait_obj, method_idx, arg_vregs)
+                } else {
+                    // Regular method call on concrete type
+                    let type_name = receiver_ty.map(|ty| {
+                        if let crate::typeck::TyKind::Named { name, .. } = &ty.kind {
+                            // Resolve "Self" to the current impl type
+                            if name == "Self" {
+                                self.current_impl_type.clone().unwrap_or_else(|| name.clone())
+                            } else {
+                                name.clone()
+                            }
                         } else {
-                            name.clone()
+                            "unknown".to_string()
                         }
-                    } else {
-                        "unknown".to_string()
-                    }
-                }).unwrap_or_else(|| "unknown".to_string());
+                    }).unwrap_or_else(|| "unknown".to_string());
 
-                // Construct qualified method name: "Counter::get_value"
-                let qualified_method = format!("{}::{}", type_name, method.name);
+                    // Construct qualified method name: "Counter::get_value"
+                    let qualified_method = format!("{}::{}", type_name, method.name);
 
-                // Lower the receiver - for user structs this gives us the struct pointer
-                let receiver_val = self.lower_expr(receiver);
+                    // Lower the receiver - for user structs this gives us the struct pointer
+                    let receiver_val = self.lower_expr(receiver);
 
-                // Lower all other arguments
-                let arg_vregs: Vec<VReg> = args.iter().map(|a| self.lower_expr(a)).collect();
+                    // Lower all other arguments
+                    let arg_vregs: Vec<VReg> = args.iter().map(|a| self.lower_expr(a)).collect();
 
-                // Prepend receiver to arguments
-                let mut all_args = vec![receiver_val];
-                all_args.extend(arg_vregs);
+                    // Prepend receiver to arguments
+                    let mut all_args = vec![receiver_val];
+                    all_args.extend(arg_vregs);
 
-                // Call the method function with qualified name
-                self.builder.call(&qualified_method, all_args)
+                    // Call the method function with qualified name
+                    self.builder.call(&qualified_method, all_args)
+                }
             }
 
             ExprKind::Field { object, field } => {
@@ -12097,6 +12381,14 @@ impl Lowerer {
             // Channel types (Phase 6) - all represented as i64 (pointer to channel struct)
             TyKind::Named { name, .. } if name == "Channel" || name == "Sender" || name == "Receiver" => {
                 IrType::I64  // Pointer to channel structure stored as i64
+            },
+            // Trait objects (dyn Trait) - fat pointer { *void data, *void vtable }
+            TyKind::TraitObject { .. } => {
+                // Fat pointer: two pointers (data_ptr, vtable_ptr)
+                IrType::Struct(vec![
+                    IrType::Ptr(Box::new(IrType::I8)), // data_ptr (opaque pointer to concrete data)
+                    IrType::Ptr(Box::new(IrType::I8)), // vtable_ptr (pointer to vtable)
+                ])
             },
             // User-defined struct types
             TyKind::Named { name, .. } => {
