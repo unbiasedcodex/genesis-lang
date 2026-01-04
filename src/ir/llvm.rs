@@ -1614,6 +1614,7 @@ pub fn compile_to_executable(
     ir_module: &Module,
     output_path: &Path,
     opt_level: OptLevel,
+    freestanding: bool,
 ) -> Result<(), String> {
     let context = Context::create();
     let mut codegen = LLVMCodegen::new(&context, &ir_module.name);
@@ -1631,18 +1632,35 @@ pub fn compile_to_executable(
     let obj_path = output_path.with_extension("o");
     codegen.write_object_file(&obj_path)?;
 
-    // Link with system linker (cc)
-    let status = std::process::Command::new("cc")
-        .arg(&obj_path)
-        .arg("-o")
-        .arg(output_path)
-        .arg("-lc")
-        .arg("-lm") // Link with libm for math functions
-        .status()
-        .map_err(|e| format!("Failed to run linker: {}", e))?;
+    if freestanding {
+        // Freestanding mode: use ld directly, no libc
+        let status = std::process::Command::new("ld")
+            .arg(&obj_path)
+            .arg("-o")
+            .arg(output_path)
+            .arg("--nostdlib")
+            .arg("-e")
+            .arg("_start") // Entry point
+            .status()
+            .map_err(|e| format!("Failed to run linker: {}", e))?;
 
-    if !status.success() {
-        return Err("Linking failed".to_string());
+        if !status.success() {
+            return Err("Linking failed (freestanding)".to_string());
+        }
+    } else {
+        // Normal mode: link with libc
+        let status = std::process::Command::new("cc")
+            .arg(&obj_path)
+            .arg("-o")
+            .arg(output_path)
+            .arg("-lc")
+            .arg("-lm") // Link with libm for math functions
+            .status()
+            .map_err(|e| format!("Failed to run linker: {}", e))?;
+
+        if !status.success() {
+            return Err("Linking failed".to_string());
+        }
     }
 
     // Clean up object file

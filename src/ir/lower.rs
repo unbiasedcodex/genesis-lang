@@ -105,6 +105,10 @@ pub struct Lowerer {
     trait_impls: HashMap<(String, String), Vec<String>>,
     /// VTable layouts: vtable_name -> VTableLayout
     vtable_layouts: HashMap<String, VTableLayout>,
+
+    // ============ Freestanding Mode ============
+    /// Freestanding mode: no libc, no runtime, for kernel/embedded
+    freestanding: bool,
 }
 
 /// Information about a closure that needs to be generated
@@ -187,7 +191,15 @@ impl Lowerer {
             trait_defs: HashMap::new(),
             trait_impls: HashMap::new(),
             vtable_layouts: HashMap::new(),
+            // Freestanding mode
+            freestanding: false,
         }
+    }
+
+    /// Enable freestanding mode (no libc, no runtime)
+    pub fn with_freestanding(mut self, freestanding: bool) -> Self {
+        self.freestanding = freestanding;
+        self
     }
 
     /// Set expression types for better IR generation
@@ -1193,14 +1205,17 @@ impl Lowerer {
         // Register built-in enum variants (Option, Result)
         self.register_builtin_enums();
 
-        // Generate async runtime support functions
-        self.generate_async_runtime();
+        // Generate runtime only in non-freestanding mode
+        if !self.freestanding {
+            // Generate async runtime support functions
+            self.generate_async_runtime();
 
-        // Generate channel runtime support functions (Phase 6)
-        self.generate_channel_runtime();
+            // Generate channel runtime support functions (Phase 6)
+            self.generate_channel_runtime();
 
-        // Generate HARC drop functions for RC types
-        self.generate_drop_functions();
+            // Generate HARC drop functions for RC types
+            self.generate_drop_functions();
+        }
 
         // Collect user-defined struct types (non-generic)
         self.collect_struct_types(program);
@@ -1557,7 +1572,8 @@ impl Lowerer {
 
         // For main function, initialize the async runtime at the start
         // This ensures timers and reactor are ready before any async code runs
-        if f.name.name == "main" {
+        // Skip in freestanding mode (no runtime available)
+        if f.name.name == "main" && !self.freestanding {
             self.builder.call("__rt_init", vec![]);
         }
 

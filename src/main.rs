@@ -53,6 +53,10 @@ enum Commands {
         #[arg(long)]
         native: bool,
 
+        /// Freestanding mode (no libc, for kernel/embedded)
+        #[arg(long)]
+        freestanding: bool,
+
         /// Optimization level (0-3)
         #[arg(short = 'O', long, default_value = "2")]
         opt_level: u8,
@@ -96,6 +100,7 @@ fn main() -> miette::Result<()> {
             emit_ir,
             emit_llvm,
             native,
+            freestanding,
             opt_level,
         } => {
             let source = fs::read_to_string(&input)
@@ -165,7 +170,8 @@ fn main() -> miette::Result<()> {
                     let lowerer = Lowerer::new(input.file_stem().unwrap_or_default().to_string_lossy())
                         .with_expr_types(typed_program.expr_types)
                         .with_monomorph(typed_program.monomorph)
-                        .with_generic_fn_calls(typed_program.generic_fn_calls);
+                        .with_generic_fn_calls(typed_program.generic_fn_calls)
+                        .with_freestanding(freestanding);
                     let module = lowerer.lower_program(&ast);
 
                     if emit_ir {
@@ -202,7 +208,7 @@ fn main() -> miette::Result<()> {
                             });
                             println!("\nGenerating native executable: {}", out_path.display());
 
-                            match compile_to_executable(&module, &out_path, opt) {
+                            match compile_to_executable(&module, &out_path, opt, freestanding) {
                                 Ok(()) => {
                                     println!("Successfully compiled to: {}", out_path.display());
                                 }
