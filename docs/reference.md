@@ -401,6 +401,57 @@ impl<T> Container<T> where T: Clone + Copy {
 }
 ```
 
+### Trait Objects (dyn Trait)
+
+Dynamic dispatch via vtables for runtime polymorphism.
+
+```genesis
+trait Shape {
+    fn area(&self) -> i64
+    fn name(&self) -> i64
+}
+
+struct Circle { radius: i64 }
+struct Rectangle { width: i64, height: i64 }
+
+impl Shape for Circle {
+    fn area(&self) -> i64 { 3 * self.radius * self.radius }
+    fn name(&self) -> i64 { println("Circle"); 1 }
+}
+
+impl Shape for Rectangle {
+    fn area(&self) -> i64 { self.width * self.height }
+    fn name(&self) -> i64 { println("Rectangle"); 2 }
+}
+
+// Polymorphic function - accepts any Shape implementation
+fn print_area(shape: dyn Shape) {
+    let a = shape.area()
+    println(a)
+}
+
+fn main() -> i64 {
+    let c = Circle { radius: 5 }
+    let r = Rectangle { width: 3, height: 4 }
+
+    print_area(c)  // Prints: 75
+    print_area(r)  // Prints: 12
+    0
+}
+```
+
+**Memory Layout:**
+- Fat pointer: `{ data_ptr: *T, vtable_ptr: *VTable }`
+- VTable: `{ drop_fn, size, align, method_0, method_1, ... }`
+
+**Object Safety Rules:**
+- All methods must take `&self` or `&mut self`
+- No methods returning `Self`
+- No generic methods
+
+**Current Limitations:**
+- `Vec<dyn Trait>` not yet supported (coercion only in function parameters)
+
 ### Associated Types
 
 Types defined within traits.

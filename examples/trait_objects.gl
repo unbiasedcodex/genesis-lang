@@ -1,0 +1,149 @@
+// Trait Objects (dyn Trait) - Dynamic Dispatch Example
+//
+// This example demonstrates:
+// 1. Trait definition and multiple implementations
+// 2. Polymorphic functions with dyn Trait parameters
+// 3. Dynamic dispatch via vtables
+// 4. Trait object memory management
+
+trait Shape {
+    fn area(&self) -> i64
+    fn name(&self) -> i64
+}
+
+struct Circle {
+    radius: i64,
+}
+
+struct Rectangle {
+    width: i64,
+    height: i64,
+}
+
+struct Triangle {
+    base: i64,
+    height: i64,
+}
+
+impl Shape for Circle {
+    fn area(&self) -> i64 {
+        // Approximate: 3 * r^2 (simplified PI)
+        3 * self.radius * self.radius
+    }
+
+    fn name(&self) -> i64 {
+        println("Circle")
+        1
+    }
+}
+
+impl Shape for Rectangle {
+    fn area(&self) -> i64 {
+        self.width * self.height
+    }
+
+    fn name(&self) -> i64 {
+        println("Rectangle")
+        2
+    }
+}
+
+impl Shape for Triangle {
+    fn area(&self) -> i64 {
+        // base * height / 2
+        self.base * self.height / 2
+    }
+
+    fn name(&self) -> i64 {
+        println("Triangle")
+        3
+    }
+}
+
+// Polymorphic function - accepts any type implementing Shape
+fn describe_shape(shape: dyn Shape) -> i64 {
+    print("Shape: ")
+    let id = shape.name()
+    print("Area: ")
+    let a = shape.area()
+    println(a)
+    a
+}
+
+// Multiple trait object parameters
+fn compare_areas(s1: dyn Shape, s2: dyn Shape) -> i64 {
+    let a1 = s1.area()
+    let a2 = s2.area()
+    if a1 > a2 {
+        1
+    } else if a1 < a2 {
+        -1
+    } else {
+        0
+    }
+}
+
+fn main() -> i64 {
+    println("=== Trait Objects Demo ===")
+    println("")
+
+    // Create different shapes
+    let circle = Circle { radius: 5 }
+    let rect = Rectangle { width: 4, height: 6 }
+    let tri = Triangle { base: 8, height: 6 }
+
+    // Polymorphic calls - same function, different concrete types
+    println("--- Describing shapes via dyn Trait ---")
+    let a1 = describe_shape(circle)
+    let a2 = describe_shape(rect)
+    let a3 = describe_shape(tri)
+    println("")
+
+    // Create new instances for comparison
+    let c2 = Circle { radius: 6 }
+    let r2 = Rectangle { width: 10, height: 10 }
+
+    println("--- Comparing areas ---")
+    print("Circle(r=6) vs Rectangle(10x10): ")
+    let cmp = compare_areas(c2, r2)
+    if cmp > 0 {
+        println("Circle is larger")
+    } else if cmp < 0 {
+        println("Rectangle is larger")
+    } else {
+        println("Equal areas")
+    }
+    println("")
+
+    // Test scoped trait objects (drop behavior)
+    println("--- Testing scope and drop ---")
+    {
+        let scoped = Circle { radius: 3 }
+        print("Inside scope: ")
+        let _a = describe_shape(scoped)
+    }
+    println("Exited scope - trait object dropped")
+    println("")
+
+    // Verify expected areas
+    // Circle: 3 * 25 = 75
+    // Rectangle: 4 * 6 = 24
+    // Triangle: 8 * 6 / 2 = 24
+    let ok1 = a1 == 75
+    let ok2 = a2 == 24
+    let ok3 = a3 == 24
+
+    if ok1 && ok2 && ok3 {
+        println("=== All tests PASSED ===")
+        0
+    } else {
+        println("=== Tests FAILED ===")
+        print("Circle area (expected 75): ")
+        println(a1)
+        print("Rectangle area (expected 24): ")
+        println(a2)
+        print("Triangle area (expected 24): ")
+        println(a3)
+        1
+    }
+}
