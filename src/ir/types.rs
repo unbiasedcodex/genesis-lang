@@ -147,6 +147,8 @@ pub struct VTableLayout {
     pub size: usize,
     /// Alignment of the concrete type
     pub align: usize,
+    /// Drop function name (e.g., "__drop_Dog_for_Animal")
+    pub drop_fn_name: String,
     /// Method function names in vtable order (after drop, size, align)
     pub methods: Vec<String>,
 }

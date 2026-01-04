@@ -103,8 +103,13 @@ impl<'ctx> LLVMCodegen<'ctx> {
             }
             let vtable_struct_type = self.context.struct_type(&field_types, false);
 
-            // Build struct values
-            let drop_fn = ptr_type.const_null();
+            // Build struct values - get actual drop function pointer
+            let drop_fn = if let Some(func) = self.module.get_function(&layout.drop_fn_name) {
+                func.as_global_value().as_pointer_value()
+            } else {
+                // Drop function not found - use null as fallback
+                ptr_type.const_null()
+            };
             let size_val = i64_type.const_int(layout.size as u64, false);
             let align_val = i64_type.const_int(layout.align as u64, false);
 

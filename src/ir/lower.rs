@@ -391,6 +391,7 @@ impl Lowerer {
 
         for (trait_name, type_name) in impl_keys {
             let vtable_name = format!("__vtable_{}_{}", trait_name, type_name);
+            let drop_fn_name = format!("__drop_{}_for_{}", type_name, trait_name);
 
             // Get method names from the impl
             let methods = self.trait_impls.get(&(trait_name.clone(), type_name.clone()))
@@ -407,6 +408,7 @@ impl Lowerer {
                 type_name: type_name.clone(),
                 size,
                 align,
+                drop_fn_name: drop_fn_name.clone(),
                 methods: methods.clone(),
             };
             self.vtable_layouts.insert(vtable_name.clone(), layout);
@@ -436,6 +438,30 @@ impl Lowerer {
                 Some(Constant::Array(entries)),
                 true, // is_const
             );
+        }
+    }
+
+    /// Generate drop functions for trait object concrete types
+    fn generate_trait_object_drop_fns(&mut self) {
+        // Clone vtable layouts to avoid borrow issues
+        let layouts: Vec<VTableLayout> = self.vtable_layouts.values().cloned().collect();
+
+        for layout in layouts {
+            // Generate: fn __drop_{Type}_for_{Trait}(data_ptr: i64) -> void
+            // This function frees the heap-allocated concrete type
+            let params = self.builder.start_function(
+                &layout.drop_fn_name,
+                vec![IrType::I64], // data_ptr as i64
+                IrType::Void,
+            );
+            let data_ptr_i64 = params[0];
+
+            // Convert i64 to pointer and free it
+            let data_ptr = self.builder.inttoptr(data_ptr_i64, IrType::ptr(IrType::I64));
+            self.builder.free(data_ptr);
+
+            self.builder.ret(None);
+            self.builder.finish_function();
         }
     }
 
@@ -852,6 +878,10 @@ impl Lowerer {
 
     /// Check if a type name represents an RC type
     fn is_rc_type_name(&self, type_name: &str) -> bool {
+        // Trait objects (dyn Trait) need drop handling via vtable
+        if type_name.starts_with("dyn ") {
+            return true;
+        }
         self.rc_type_info.is_rc_type(type_name)
     }
 
@@ -968,6 +998,37 @@ impl Lowerer {
                             };
                             self.builder.call("__drop_box", vec![ptr_val]);
                         }
+                        _ if base_type.starts_with("dyn ") => {
+                            // Trait object - drop via vtable[0]
+                            // Fat pointer struct: { data_ptr: *T, vtable_ptr: *VTable }
+                            // VTable struct: { drop_fn: fn(*T), size: i64, align: i64, ... }
+
+                            // Load the fat pointer from the slot
+                            let fat_ptr = if self.ptr_locals.contains(&entry.name) {
+                                slot
+                            } else {
+                                self.builder.load(slot)
+                            };
+
+                            // Extract data_ptr (field 0)
+                            let data_ptr_field = self.builder.get_field_ptr(fat_ptr, 0);
+                            let data_ptr = self.builder.load(data_ptr_field);
+
+                            // Extract vtable_ptr (field 1)
+                            let vtable_ptr_field = self.builder.get_field_ptr(fat_ptr, 1);
+                            let vtable_ptr = self.builder.load(vtable_ptr_field);
+
+                            // VTable layout: { drop_fn: ptr, size: i64, align: i64, ... }
+                            // Get drop_fn (field 0 of vtable)
+                            let drop_fn_field = self.builder.get_field_ptr(vtable_ptr, 0);
+                            let drop_fn = self.builder.load(drop_fn_field);
+
+                            // Convert data_ptr to i64 for the drop function call
+                            let data_ptr_i64 = self.builder.ptrtoint(data_ptr, IrType::I64);
+
+                            // Call drop_fn(data_ptr)
+                            self.builder.call_ptr(drop_fn, vec![data_ptr_i64]);
+                        }
                         _ => {
                             // For other RC types, use rc_release
                             let ptr = if self.ptr_locals.contains(&entry.name) {
@@ -1047,6 +1108,9 @@ impl Lowerer {
                     .map(|e| self.ty_to_type_name(e))
                     .collect();
                 format!("({})", elem_strs.join(", "))
+            }
+            crate::typeck::TyKind::TraitObject { trait_name } => {
+                format!("dyn {}", trait_name)
             }
             _ => "unknown".to_string(),
         }
@@ -1153,6 +1217,9 @@ impl Lowerer {
 
         // Generate vtable constants for all trait implementations
         self.generate_vtables();
+
+        // Generate drop functions for trait object concrete types
+        self.generate_trait_object_drop_fns();
 
         // Collect generic function definitions
         self.collect_generic_fn_defs(program);

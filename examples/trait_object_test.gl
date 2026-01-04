@@ -1,0 +1,92 @@
+// Test trait objects (dyn Trait) with drop functionality
+
+trait Animal {
+    fn speak(&self) -> i64
+    fn id(&self) -> i64
+}
+
+struct Dog {
+    id: i64,
+}
+
+struct Cat {
+    id: i64,
+}
+
+impl Animal for Dog {
+    fn speak(&self) -> i64 {
+        println("Dog: Woof!")
+        1
+    }
+
+    fn id(&self) -> i64 {
+        self.id
+    }
+}
+
+impl Animal for Cat {
+    fn speak(&self) -> i64 {
+        println("Cat: Meow!")
+        2
+    }
+
+    fn id(&self) -> i64 {
+        self.id
+    }
+}
+
+// Function that takes a trait object
+fn make_sound(animal: dyn Animal) -> i64 {
+    animal.speak()
+}
+
+// Function that gets ID from trait object
+fn get_animal_id(animal: dyn Animal) -> i64 {
+    animal.id()
+}
+
+fn main() -> i64 {
+    println("=== Trait Object Test ===")
+
+    // Create concrete instances
+    let dog = Dog { id: 100 }
+    let cat = Cat { id: 200 }
+
+    // Call through trait objects
+    println("Testing make_sound with Dog:")
+    let r1 = make_sound(dog)
+
+    println("Testing make_sound with Cat:")
+    let r2 = make_sound(cat)
+
+    // Create new instances for ID test
+    let dog2 = Dog { id: 42 }
+    let cat2 = Cat { id: 99 }
+
+    println("Testing get_animal_id:")
+    let id1 = get_animal_id(dog2)
+    let id2 = get_animal_id(cat2)
+
+    print("Dog ID: ")
+    println(id1)
+    print("Cat ID: ")
+    println(id2)
+
+    // Test that drop is called correctly by using trait object in scope
+    {
+        let scoped_dog = Dog { id: 999 }
+        println("Inside scope with Dog:")
+        let _r = make_sound(scoped_dog)
+        // scoped_dog's trait object should be dropped here
+    }
+    println("Exited scope - Dog should be dropped")
+
+    // Verify results
+    if r1 == 1 && r2 == 2 && id1 == 42 && id2 == 99 {
+        println("=== Trait Object Test PASSED! ===")
+        0
+    } else {
+        println("=== Trait Object Test FAILED! ===")
+        1
+    }
+}
