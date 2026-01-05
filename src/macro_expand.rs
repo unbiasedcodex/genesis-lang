@@ -1935,6 +1935,7 @@ fn token_kind_to_string(kind: &TokenKind) -> String {
         TokenKind::LeftArrow => "<-".to_string(),
         TokenKind::LeftArrowQuestion => "<-?".to_string(),
         TokenKind::Dollar => "$".to_string(),
+        TokenKind::Hash => "#".to_string(),
         TokenKind::Question => "?".to_string(),
 
         // Delimiters

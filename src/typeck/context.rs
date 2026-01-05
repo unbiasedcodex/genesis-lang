@@ -708,6 +708,43 @@ impl TypeContext {
             );
         }
 
+        // ============ Memory Layout Intrinsics ============
+        // size_of and align_of for memory layout control
+
+        // size_of::<T>() -> u64 - returns size of type T in bytes
+        self.functions.insert(
+            "size_of".to_string(),
+            FnSig {
+                name: "size_of".to_string(),
+                generics: vec!["T".to_string()],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![],
+                ret: Ty::u64(),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // align_of::<T>() -> u64 - returns alignment of type T in bytes
+        self.functions.insert(
+            "align_of".to_string(),
+            FnSig {
+                name: "align_of".to_string(),
+                generics: vec!["T".to_string()],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![],
+                ret: Ty::u64(),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
         // ============ Vec<T> Functions ============
 
         // Vec::new() - create empty vector

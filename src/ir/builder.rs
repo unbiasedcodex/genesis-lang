@@ -882,6 +882,16 @@ impl IrBuilder {
         self.emit(None, InstrKind::VolatileStore(ptr, value));
     }
 
+    /// Get size of type in bytes
+    pub fn size_of(&mut self, ty: IrType) -> VReg {
+        self.emit_with_result(InstrKind::SizeOf(ty))
+    }
+
+    /// Get alignment of type in bytes
+    pub fn align_of(&mut self, ty: IrType) -> VReg {
+        self.emit_with_result(InstrKind::AlignOf(ty))
+    }
+
     pub fn get_field_ptr(&mut self, ptr: VReg, field_idx: u32) -> VReg {
         self.emit_with_result(InstrKind::GetFieldPtr(ptr, field_idx))
     }

@@ -101,6 +101,8 @@ pub struct StructDef {
     pub generics: Option<Generics>,
     pub fields: Vec<Field>,
     pub is_pub: bool,
+    /// Layout attributes: #[repr(C)], #[repr(packed)], #[repr(align(N))]
+    pub repr: Option<ReprAttr>,
     pub span: Span,
 }
 
@@ -384,6 +386,20 @@ pub enum MacroDelimiter {
     Paren,   // ( )
     Bracket, // [ ]
     Brace,   // { }
+}
+
+// ============ Attributes ============
+
+/// Representation attribute for structs
+/// Controls memory layout for hardware compatibility
+#[derive(Debug, Clone, Default)]
+pub struct ReprAttr {
+    /// Use C ABI layout (deterministic field order with standard alignment)
+    pub c: bool,
+    /// Remove all padding (packed layout)
+    pub packed: bool,
+    /// Custom alignment in bytes (must be power of 2)
+    pub align: Option<u64>,
 }
 
 /// Macro invocation: `name!(args)`

@@ -50,6 +50,8 @@ pub enum IrType {
     Array(Box<IrType>, usize),
     /// Struct with named fields
     Struct(Vec<IrType>),
+    /// Packed struct (no padding between fields) for #[repr(packed)]
+    StructPacked(Vec<IrType>),
     /// Function type: (params) -> ret
     Fn {
         params: Vec<IrType>,
@@ -76,8 +78,23 @@ impl IrType {
             IrType::I64 | IrType::F64 => 8,
             IrType::Ptr(_) => 8, // Assume 64-bit pointers
             IrType::Array(elem, size) => elem.size() * size,
-            IrType::Struct(fields) => fields.iter().map(|f| f.size()).sum(),
+            IrType::Struct(fields) | IrType::StructPacked(fields) => fields.iter().map(|f| f.size()).sum(),
             IrType::Fn { .. } => 8, // Function pointer
+        }
+    }
+
+    /// Alignment in bytes (platform-dependent)
+    pub fn alignment(&self) -> usize {
+        match self {
+            IrType::Void => 1,
+            IrType::Bool | IrType::I8 => 1,
+            IrType::I16 => 2,
+            IrType::I32 | IrType::F32 => 4,
+            IrType::I64 | IrType::F64 | IrType::Ptr(_) => 8,
+            IrType::Array(elem, _) => elem.alignment(),
+            IrType::Struct(fields) => fields.iter().map(|f| f.alignment()).max().unwrap_or(1),
+            IrType::StructPacked(_) => 1, // Packed structs have alignment of 1
+            IrType::Fn { .. } => 8,
         }
     }
 
@@ -119,6 +136,17 @@ impl fmt::Display for IrType {
                     write!(f, "{}", field)?;
                 }
                 write!(f, "}}")
+            }
+            IrType::StructPacked(fields) => {
+                write!(f, "<{{")?; // LLVM packed struct syntax
+                for (i, field) in fields.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", field)?;
+                }
+                write!(f, "}}>")?;
+                Ok(())
             }
             IrType::Fn { params, ret } => {
                 write!(f, "(")?;

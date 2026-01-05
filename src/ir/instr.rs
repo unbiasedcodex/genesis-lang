@@ -161,6 +161,12 @@ pub enum InstrKind {
     /// Volatile store to memory (ptr, value) (prevents reordering/optimization)
     VolatileStore(VReg, VReg),
 
+    // ============ Memory Layout Intrinsics ============
+    /// Get size of type in bytes
+    SizeOf(IrType),
+    /// Get alignment of type in bytes
+    AlignOf(IrType),
+
     // ============ Function Calls ============
     /// Call a function
     Call {
@@ -337,6 +343,8 @@ impl fmt::Display for Instruction {
             InstrKind::LoadByte(ptr) => write!(f, "loadbyte {}", ptr),
             InstrKind::VolatileLoad(ptr) => write!(f, "volatile_load {}", ptr),
             InstrKind::VolatileStore(ptr, val) => write!(f, "volatile_store {}, {}", ptr, val),
+            InstrKind::SizeOf(ty) => write!(f, "size_of {:?}", ty),
+            InstrKind::AlignOf(ty) => write!(f, "align_of {:?}", ty),
             InstrKind::Call { func, args } => {
                 write!(f, "call {}(", func)?;
                 for (i, arg) in args.iter().enumerate() {

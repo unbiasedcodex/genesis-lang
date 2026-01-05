@@ -962,6 +962,23 @@ impl<'ctx> LLVMCodegen<'ctx> {
                 store.set_volatile(true).unwrap();
                 None
             }
+
+            InstrKind::SizeOf(ir_type) => {
+                if let Some(llvm_type) = self.convert_type(ir_type) {
+                    let size = llvm_type.size_of().unwrap();
+                    Some(size.into())
+                } else {
+                    // Void type - size is 0
+                    Some(self.context.i64_type().const_int(0, false).into())
+                }
+            }
+
+            InstrKind::AlignOf(ir_type) => {
+                // Calculate alignment from IrType since inkwell doesn't expose alignment directly
+                let align = ir_type.alignment() as u64;
+                Some(self.context.i64_type().const_int(align, false).into())
+            }
+
             InstrKind::GetFieldPtr(ptr, idx) => {
                 let ptr_val = self.get_vreg(*ptr).into_pointer_value();
                 // Get the struct type from the tracked type
@@ -1549,6 +1566,14 @@ impl<'ctx> LLVMCodegen<'ctx> {
                     .filter_map(|f| self.convert_type(f))
                     .collect();
                 Some(self.context.struct_type(&field_types, false).into())
+            }
+            IrType::StructPacked(fields) => {
+                let field_types: Vec<BasicTypeEnum<'ctx>> = fields
+                    .iter()
+                    .filter_map(|f| self.convert_type(f))
+                    .collect();
+                // Create packed struct (second arg = true means packed)
+                Some(self.context.struct_type(&field_types, true).into())
             }
             IrType::Fn { params: _, ret: _ } => {
                 // Return pointer to function

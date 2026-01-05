@@ -256,6 +256,8 @@ pub enum TokenKind {
     // Macro-specific
     #[token("$")]
     Dollar,
+    #[token("#")]
+    Hash,
 
     // Other
     #[token("->")]
@@ -521,6 +523,7 @@ impl fmt::Display for TokenKind {
             TokenKind::ShlEq => "<<=",
             TokenKind::ShrEq => ">>=",
             TokenKind::Dollar => "$",
+            TokenKind::Hash => "#",
             TokenKind::Arrow => "->",
             TokenKind::FatArrow => "=>",
             TokenKind::LeftArrow => "<-",

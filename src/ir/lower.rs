@@ -240,7 +240,19 @@ impl Lowerer {
                     "f32" => IrType::F32,
                     "f64" => IrType::F64,
                     "bool" => IrType::Bool,
-                    _ => IrType::I64, // Default for unknown types
+                    _ => {
+                        // Check if it's a user-defined struct type
+                        if let Some(struct_ty) = self.struct_types.get(name) {
+                            // struct_types stores Ptr(Struct(...)), we want the inner Struct
+                            if let IrType::Ptr(inner) = struct_ty {
+                                (**inner).clone()
+                            } else {
+                                struct_ty.clone()
+                            }
+                        } else {
+                            IrType::I64 // Default for unknown types
+                        }
+                    }
                 }
             }
             TypeKind::Reference { inner, .. } => {
@@ -279,8 +291,17 @@ impl Lowerer {
                             .map(|f| self.ast_type_to_ir_type_simple(&f.ty))
                             .collect();
 
+                        // Check if struct has #[repr(packed)] attribute
+                        let is_packed = s.repr.as_ref()
+                            .map(|r| r.packed)
+                            .unwrap_or(false);
+
                         // Store as pointer to struct (matches how struct literals work)
-                        let struct_ty = IrType::Struct(field_types);
+                        let struct_ty = if is_packed {
+                            IrType::StructPacked(field_types)
+                        } else {
+                            IrType::Struct(field_types)
+                        };
                         self.struct_types.insert(s.name.name.clone(), IrType::Ptr(Box::new(struct_ty)));
                     }
                 }
@@ -2434,6 +2455,34 @@ impl Lowerer {
                         let val = self.lower_expr(&args[1]);
                         self.builder.volatile_store(ptr, val);
                     }
+                    return self.builder.const_int(0);
+                }
+
+                // Handle size_of::<T>() - returns size of type T in bytes
+                if func_name == "size_of" {
+                    if let ExprKind::Path(path) = &func.kind {
+                        if let Some(generics) = &path.segments.last().and_then(|s| s.generics.as_ref()) {
+                            if let Some(ty) = generics.first() {
+                                let ir_type = self.ast_type_to_ir_type_simple(ty);
+                                return self.builder.size_of(ir_type);
+                            }
+                        }
+                    }
+                    // No type argument - return 0 as error fallback
+                    return self.builder.const_int(0);
+                }
+
+                // Handle align_of::<T>() - returns alignment of type T in bytes
+                if func_name == "align_of" {
+                    if let ExprKind::Path(path) = &func.kind {
+                        if let Some(generics) = &path.segments.last().and_then(|s| s.generics.as_ref()) {
+                            if let Some(ty) = generics.first() {
+                                let ir_type = self.ast_type_to_ir_type_simple(ty);
+                                return self.builder.align_of(ir_type);
+                            }
+                        }
+                    }
+                    // No type argument - return 0 as error fallback
                     return self.builder.const_int(0);
                 }
 

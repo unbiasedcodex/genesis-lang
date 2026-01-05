@@ -3,7 +3,7 @@
 //! This is a recursive descent parser that converts tokens into an AST.
 //! The parser handles precedence and associativity correctly.
 
-use crate::ast::{self, *};
+use crate::ast::{self, *, ReprAttr};
 use crate::lexer::Lexer;
 use crate::span::Span;
 use crate::token::{Token, TokenKind};
@@ -208,12 +208,15 @@ impl<'src> Parser<'src> {
 
     /// Parse a top-level item
     fn parse_item(&mut self) -> ParseResult<Item> {
+        // Parse optional attributes: #[repr(C)], #[repr(packed)], etc.
+        let repr_attr = self.parse_repr_attr_opt()?;
+
         let is_pub = self.consume(TokenKind::Pub);
         let is_async = self.consume(TokenKind::Async);
 
         match self.current.kind {
             TokenKind::Fn => self.parse_fn(is_pub, is_async).map(Item::Function),
-            TokenKind::Struct => self.parse_struct(is_pub).map(Item::Struct),
+            TokenKind::Struct => self.parse_struct_with_repr(is_pub, repr_attr).map(Item::Struct),
             TokenKind::Enum => self.parse_enum(is_pub).map(Item::Enum),
             TokenKind::Impl => self.parse_impl().map(Item::Impl),
             TokenKind::Trait => self.parse_trait(is_pub).map(Item::Trait),
@@ -230,6 +233,71 @@ impl<'src> Parser<'src> {
                 span: self.current.span,
             }),
         }
+    }
+
+    /// Parse optional #[repr(...)] attribute
+    fn parse_repr_attr_opt(&mut self) -> ParseResult<Option<ReprAttr>> {
+        if !self.check(TokenKind::Hash) {
+            return Ok(None);
+        }
+
+        self.advance(); // consume #
+        self.expect(TokenKind::LBracket)?;
+
+        // Expect 'repr' identifier
+        let attr_name = self.parse_ident()?;
+        if attr_name.name != "repr" {
+            return Err(ParseError::Custom {
+                message: format!("unknown attribute '{}', expected 'repr'", attr_name.name),
+                span: attr_name.span,
+            });
+        }
+
+        self.expect(TokenKind::LParen)?;
+
+        let mut repr = ReprAttr::default();
+
+        // Parse repr options: C, packed, align(N)
+        loop {
+            let opt_name = self.parse_ident()?;
+            match opt_name.name.as_str() {
+                "C" => repr.c = true,
+                "packed" => repr.packed = true,
+                "align" => {
+                    self.expect(TokenKind::LParen)?;
+                    let align_tok = self.expect(TokenKind::IntLiteral)?;
+                    let align_str = self.text(&align_tok);
+                    let align: u64 = align_str.parse().map_err(|_| ParseError::Custom {
+                        message: "invalid alignment value".to_string(),
+                        span: align_tok.span,
+                    })?;
+                    // Validate alignment is power of 2
+                    if align == 0 || (align & (align - 1)) != 0 {
+                        return Err(ParseError::Custom {
+                            message: "alignment must be a power of 2".to_string(),
+                            span: align_tok.span,
+                        });
+                    }
+                    repr.align = Some(align);
+                    self.expect(TokenKind::RParen)?;
+                }
+                _ => {
+                    return Err(ParseError::Custom {
+                        message: format!("unknown repr option '{}', expected C, packed, or align", opt_name.name),
+                        span: opt_name.span,
+                    });
+                }
+            }
+
+            if !self.consume(TokenKind::Comma) {
+                break;
+            }
+        }
+
+        self.expect(TokenKind::RParen)?;
+        self.expect(TokenKind::RBracket)?;
+
+        Ok(Some(repr))
     }
 
     // ============ Function parsing ============
@@ -371,6 +439,10 @@ impl<'src> Parser<'src> {
     // ============ Struct parsing ============
 
     fn parse_struct(&mut self, is_pub: bool) -> ParseResult<StructDef> {
+        self.parse_struct_with_repr(is_pub, None)
+    }
+
+    fn parse_struct_with_repr(&mut self, is_pub: bool, repr: Option<ReprAttr>) -> ParseResult<StructDef> {
         let start = self.current.span.start;
         self.expect(TokenKind::Struct)?;
         let name = self.parse_ident()?;
@@ -399,6 +471,7 @@ impl<'src> Parser<'src> {
             generics,
             fields,
             is_pub,
+            repr,
             span: Span::new(start, self.previous.span.end),
         })
     }
@@ -2864,9 +2937,42 @@ impl<'src> Parser<'src> {
         loop {
             let ident = self.parse_ident()?;
 
-            // Only parse generics with turbofish syntax (::< >) to avoid
-            // ambiguity with comparison operators like x < y
-            // For type contexts, use parse_type_path instead
+            // Check for turbofish syntax (::< >) for generic arguments
+            // This happens when we have `::` followed by `<`
+            if self.check(TokenKind::ColonColon) {
+                // Peek ahead to see if this is turbofish (::< )
+                let next_kind = self.peek_nth(1).kind.clone();
+                if next_kind == TokenKind::Lt {
+                    // Consume :: and <
+                    self.advance(); // ::
+                    self.advance(); // <
+
+                    // Parse generic type arguments
+                    let mut types = Vec::new();
+                    if !self.check(TokenKind::Gt) {
+                        loop {
+                            types.push(self.parse_type()?);
+                            if !self.consume(TokenKind::Comma) {
+                                break;
+                            }
+                        }
+                    }
+                    self.expect(TokenKind::Gt)?;
+
+                    segments.push(PathSegment {
+                        ident,
+                        generics: Some(types),
+                    });
+
+                    // Continue if there's more path after generics
+                    if !self.consume(TokenKind::ColonColon) {
+                        break;
+                    }
+                    continue;
+                }
+            }
+
+            // No generics
             segments.push(PathSegment {
                 ident,
                 generics: None,
