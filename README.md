@@ -2,7 +2,7 @@
 
 **Systems programming with memory safety — without the complexity.**
 
-Genesis is a statically-typed, compiled language that brings memory safety to systems programming through automatic reference counting, not complex lifetime annotations. If you've ever wanted to write low-level code but found Rust's learning curve too steep, Genesis is for you.
+Genesis is a statically-typed, compiled language that brings memory safety to systems programming through automatic reference counting, not complex lifetime annotations. From applications to operating system kernels, Genesis provides the power you need with a familiar syntax.
 
 ```genesis
 fn main() -> i32 {
@@ -22,6 +22,7 @@ fn main() -> i32 {
 | Learning curve | Steep (borrow checker) | Familiar (like Go/Swift) |
 | Compile errors | Complex lifetime errors | Clear, actionable errors |
 | Async code | Pin, lifetimes in futures | Simple async/await |
+| Kernel development | Requires unsafe everywhere | First-class freestanding support |
 
 **Genesis is not trying to replace Rust.** Rust is excellent for maximum performance with zero-cost safety. Genesis offers an alternative: **memory safety with a gentler learning curve**, ideal for developers who want systems-level control without fighting the borrow checker.
 
@@ -30,6 +31,7 @@ fn main() -> i32 {
 - Developers who want **native performance** without garbage collection
 - Teams transitioning from **Go, Python, or JavaScript** to systems programming
 - Projects where **developer productivity** matters as much as raw speed
+- **Kernel and embedded developers** who need freestanding compilation
 - The **Genesis OS** project (our primary use case)
 
 ---
@@ -80,6 +82,31 @@ fn process_data() -> String {
 }
 ```
 
+### Trait Objects (Dynamic Dispatch)
+
+Full support for trait objects with vtable-based dynamic dispatch:
+
+```genesis
+trait Drawable {
+    fn draw(&self)
+}
+
+struct Circle { radius: f64 }
+struct Square { side: f64 }
+
+impl Drawable for Circle {
+    fn draw(&self) { println("Drawing circle") }
+}
+
+impl Drawable for Square {
+    fn draw(&self) { println("Drawing square") }
+}
+
+fn render(shape: &dyn Drawable) {
+    shape.draw()  // Dynamic dispatch via vtable
+}
+```
+
 ### Modern Type System
 
 Generics, traits, type inference, and pattern matching with exhaustiveness checking.
@@ -124,6 +151,40 @@ fn main() -> i64 {
 }
 ```
 
+### Kernel & Embedded Development
+
+Freestanding mode for OS kernels and bare-metal applications:
+
+```genesis
+#[repr(C, packed)]
+struct GdtEntry {
+    limit_low: u16,
+    base_low: u16,
+    base_middle: u8,
+    access: u8,
+    granularity: u8,
+    base_high: u8,
+}
+
+fn cli() {
+    unsafe { asm!("cli", options(nomem, nostack)); }
+}
+
+fn _start() {
+    cli();
+    let vga: *mut u8 = 0xB8000 as *mut u8;
+    unsafe {
+        volatile_write_u8(vga, 72);  // 'H'
+    }
+    loop {}
+}
+```
+
+Build with:
+```bash
+glc build kernel.gl --freestanding --linker-script=kernel.ld -o kernel.elf
+```
+
 ### Powerful Macros
 
 Declarative macros for code generation.
@@ -155,6 +216,7 @@ let scores = hashmap!{
 | **Async** | 15+ | spawn, channels, timers, TCP |
 | **File I/O** | 15 | Files, directories, paths |
 | **Time** | 16 | Duration, elapsed, timestamps |
+| **Random** | 5 | random_i64, random_f64, random_range |
 
 ### Example: Working with Collections
 
@@ -175,6 +237,25 @@ fn main() -> i64 {
 
 ---
 
+## Freestanding Mode
+
+Genesis supports compilation without libc for kernel and embedded development:
+
+| Feature | Description |
+|---------|-------------|
+| `--freestanding` | Compile without libc dependency |
+| `--linker-script` | Custom memory layout |
+| `--emit-obj` | Generate object file only |
+| Raw Pointers | `*T`, `*mut T`, `null`, `&raw` |
+| Volatile Ops | `volatile_read_*`, `volatile_write_*` |
+| Inline Assembly | `asm!` with full operand support |
+| Memory Layout | `#[repr(C)]`, `#[repr(packed)]` |
+| Intrinsics | `size_of::<T>()`, `align_of::<T>()` |
+
+See [Freestanding Documentation](docs/freestanding.md) for details.
+
+---
+
 ## Project Status
 
 Genesis is functional and actively developed. The compiler is written in Rust (~25,000 lines) and compiles to native code via LLVM.
@@ -185,11 +266,13 @@ Genesis is functional and actively developed. The compiler is written in Rust (~
 | LLVM backend | Complete |
 | Standard library | Complete |
 | Async runtime | Complete |
+| Trait objects (dyn Trait) | Complete |
+| Freestanding mode | Complete |
 | LSP server (IDE support) | Complete |
 | Package manager | Planned |
 | Self-hosting compiler | Planned |
 
-**Tests**: 176 passing | **Examples**: 99 files
+**Tests**: 184 passing | **Examples**: 102 files
 
 ---
 
@@ -203,6 +286,7 @@ Genesis is functional and actively developed. The compiler is written in Rust (~
 | Lifetimes | Explicit (`'a`) | None |
 | Performance | Maximum | Near-native (RC overhead) |
 | Learning curve | Steep | Moderate |
+| Kernel support | Via unsafe | First-class freestanding |
 | Ecosystem | Massive | New |
 
 **Choose Rust if**: Maximum performance is critical, you're comfortable with lifetimes, or you need the ecosystem.
@@ -217,6 +301,7 @@ Genesis is functional and actively developed. The compiler is written in Rust (~
 | Generics | Limited | Full (with traits) |
 | Null safety | No | Yes (Option type) |
 | Pattern matching | No | Yes |
+| Kernel development | Not supported | Full support |
 
 ---
 
@@ -226,6 +311,7 @@ Genesis is functional and actively developed. The compiler is written in Rust (~
 |----------|-------------|
 | [Language Reference](docs/reference.md) | Complete language and stdlib reference |
 | [Memory Management](docs/memory.md) | HARC system details |
+| [Freestanding Mode](docs/freestanding.md) | Kernel and embedded development |
 | [Math Functions](docs/math.md) | Complete math reference |
 | [Macro System](docs/macros.md) | Declarative macros |
 | [LSP Setup](docs/lsp.md) | IDE configuration |
