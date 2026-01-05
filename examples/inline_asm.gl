@@ -1,0 +1,92 @@
+// Inline Assembly Example for Kernel Development
+// Demonstrates various x86_64 instructions useful for OS development
+
+fn main() {
+    println("=== Inline Assembly Demo ===");
+
+    // Test basic nop
+    test_nop();
+
+    // Test with input operands
+    test_input();
+
+    // Test cli/sti (in real kernel context)
+    test_kernel_instructions();
+
+    println("=== All tests passed! ===");
+}
+
+fn test_nop() {
+    println("Testing nop instructions...");
+    unsafe {
+        asm!("nop", options(nomem, nostack, pure));
+        asm!("nop", options(nomem, nostack, pure));
+    }
+    println("  nop: OK");
+}
+
+fn test_input() {
+    println("Testing input operands...");
+    let x: i64 = 42;
+    let y: i64 = 100;
+
+    // Test with input values
+    unsafe {
+        // Use test instruction to verify operand passing
+        asm!("test $0, $0", in(reg) x, options(nomem, nostack));
+        asm!("cmp $0, $1", in(reg) x, in(reg) y, options(nomem, nostack, pure));
+    }
+    println("  input operands: OK");
+}
+
+fn test_kernel_instructions() {
+    println("Testing kernel-style instructions...");
+
+    // These would be used in a real kernel:
+    // cli - clear interrupts (disable)
+    // sti - set interrupts (enable)
+    // hlt - halt processor
+
+    // In user mode, these are privileged and will cause SIGILL
+    // So we just test the assembly generation
+
+    // Memory barrier
+    unsafe {
+        asm!("mfence", options(nostack));
+    }
+    println("  memory fence: OK");
+
+    // Pause instruction (for spin loops)
+    unsafe {
+        asm!("pause", options(nomem, nostack));
+    }
+    println("  pause: OK");
+
+    // cpuid example (input in eax=0)
+    unsafe {
+        asm!("xor %eax, %eax", options(nomem, nostack, att_syntax));
+    }
+    println("  xor (AT&T syntax): OK");
+}
+
+// Example of port I/O that would be used in kernel
+// (Not executed because requires privileged mode)
+fn _port_out_example(port: u16, value: u8) {
+    unsafe {
+        asm!("out %al, %dx",
+            in("dx") port,
+            in("al") value,
+            options(nomem, nostack, att_syntax));
+    }
+}
+
+fn _port_in_example(port: u16) -> u8 {
+    let result: u8 = 0;
+    unsafe {
+        asm!("in %dx, %al",
+            in("dx") port,
+            out("al") result,
+            options(nomem, nostack, att_syntax));
+    }
+    result
+}

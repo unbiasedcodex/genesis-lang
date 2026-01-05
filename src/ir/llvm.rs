@@ -1446,6 +1446,92 @@ impl<'ctx> LLVMCodegen<'ctx> {
                 let result = self.builder.build_indirect_call(fn_type, fn_ptr, &call_args, "vtable_call").unwrap();
                 result.try_as_basic_value().left()
             }
+
+            // ============ Inline Assembly ============
+            InstrKind::InlineAsm {
+                template,
+                constraints,
+                inputs,
+                output_types,
+                has_side_effects,
+                align_stack,
+                dialect,
+            } => {
+                use inkwell::InlineAsmDialect;
+
+                // Build input values
+                let mut input_values: Vec<BasicMetadataValueEnum> = Vec::new();
+                let mut input_types: Vec<BasicMetadataTypeEnum> = Vec::new();
+
+                for input in inputs {
+                    let val = self.get_vreg(*input);
+                    input_values.push(val.into());
+                    input_types.push(val.get_type().into());
+                }
+
+                // Determine dialect
+                let asm_dialect = if *dialect == 0 {
+                    InlineAsmDialect::ATT
+                } else {
+                    InlineAsmDialect::Intel
+                };
+
+                // Handle based on whether we have outputs
+                if output_types.is_empty() {
+                    // No outputs - void return
+                    let fn_type = self.context.void_type().fn_type(&input_types, false);
+                    let asm = self.context.create_inline_asm(
+                        fn_type,
+                        template.clone(),
+                        constraints.clone(),
+                        *has_side_effects,
+                        *align_stack,
+                        Some(asm_dialect),
+                        false, // can_throw
+                    );
+                    self.builder.build_indirect_call(fn_type, asm, &input_values, "asm").unwrap();
+                    None
+                } else if output_types.len() == 1 {
+                    // Single output
+                    if let Some(ret_ty) = self.convert_type(&output_types[0]) {
+                        let fn_type = ret_ty.fn_type(&input_types, false);
+                        let asm = self.context.create_inline_asm(
+                            fn_type,
+                            template.clone(),
+                            constraints.clone(),
+                            *has_side_effects,
+                            *align_stack,
+                            Some(asm_dialect),
+                            false, // can_throw
+                        );
+                        let call = self.builder.build_indirect_call(fn_type, asm, &input_values, "asm").unwrap();
+                        call.try_as_basic_value().left()
+                    } else {
+                        None
+                    }
+                } else {
+                    // Multiple outputs - return struct
+                    let mut tys: Vec<BasicTypeEnum> = Vec::new();
+                    for oty in output_types {
+                        if let Some(t) = self.convert_type(oty) {
+                            tys.push(t);
+                        }
+                    }
+                    let struct_ty = self.context.struct_type(&tys, false);
+                    let fn_type = struct_ty.fn_type(&input_types, false);
+                    let asm = self.context.create_inline_asm(
+                        fn_type,
+                        template.clone(),
+                        constraints.clone(),
+                        *has_side_effects,
+                        *align_stack,
+                        Some(asm_dialect),
+                        false, // can_throw
+                    );
+                    let call = self.builder.build_indirect_call(fn_type, asm, &input_values, "asm").unwrap();
+                    call.try_as_basic_value().left()
+                }
+            }
         };
 
         // Store result if instruction has one

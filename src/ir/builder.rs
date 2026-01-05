@@ -1040,4 +1040,60 @@ impl IrBuilder {
             block.terminator = Some(Terminator::Unreachable);
         }
     }
+
+    // ============ Inline Assembly ============
+
+    /// Emit inline assembly instruction
+    ///
+    /// # Arguments
+    /// * `template` - Assembly template string (Intel syntax by default)
+    /// * `constraints` - LLVM constraint string (e.g., "=r,r,~{memory}")
+    /// * `inputs` - Input operand registers
+    /// * `output_types` - Types of output values (empty for void)
+    /// * `has_side_effects` - Whether the asm has observable side effects
+    /// * `align_stack` - Whether to align stack (usually true for calls)
+    /// * `dialect` - 0 = AT&T, 1 = Intel
+    pub fn inline_asm(
+        &mut self,
+        template: String,
+        constraints: String,
+        inputs: Vec<VReg>,
+        output_types: Vec<IrType>,
+        has_side_effects: bool,
+        align_stack: bool,
+        dialect: u8,
+    ) -> Option<VReg> {
+        let result = if output_types.is_empty() {
+            None
+        } else {
+            Some(self.fresh_vreg())
+        };
+
+        self.emit(
+            result,
+            InstrKind::InlineAsm {
+                template,
+                constraints,
+                inputs,
+                output_types,
+                has_side_effects,
+                align_stack,
+                dialect,
+            },
+        );
+
+        result
+    }
+
+    /// Emit inline assembly with no outputs (side-effect only)
+    pub fn inline_asm_void(
+        &mut self,
+        template: String,
+        constraints: String,
+        inputs: Vec<VReg>,
+        has_side_effects: bool,
+        dialect: u8,
+    ) {
+        self.inline_asm(template, constraints, inputs, vec![], has_side_effects, false, dialect);
+    }
 }

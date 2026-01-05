@@ -2070,6 +2070,34 @@ impl TypeInference {
                 let operand_ty = self.infer_expr(operand)?;
                 Ok(Ty::raw_ptr(operand_ty, *mutable))
             }
+
+            ExprKind::InlineAsm { template: _, operands, options: _ } => {
+                // Type check all operand expressions
+                for operand in operands {
+                    use crate::ast::AsmOperandKind;
+                    match &operand.kind {
+                        AsmOperandKind::In { expr, .. } => {
+                            self.infer_expr(expr)?;
+                        }
+                        AsmOperandKind::Out { expr, .. } => {
+                            if let Some(e) = expr {
+                                self.infer_expr(e)?;
+                            }
+                        }
+                        AsmOperandKind::InOut { expr, .. } => {
+                            self.infer_expr(expr)?;
+                        }
+                        AsmOperandKind::Const { expr } => {
+                            self.infer_expr(expr)?;
+                        }
+                        AsmOperandKind::Sym { .. } => {
+                            // Symbol references don't need type checking here
+                        }
+                    }
+                }
+                // Inline assembly returns unit type
+                Ok(Ty::unit())
+            }
         }
     }
 

@@ -211,6 +211,25 @@ pub enum InstrKind {
     GlobalRef(String),
     /// Reference to a function (returns function pointer)
     FuncRef(String),
+
+    // ============ Inline Assembly ============
+    /// Inline assembly instruction
+    InlineAsm {
+        /// Assembly template string (Intel syntax by default)
+        template: String,
+        /// Input/output constraints in LLVM format
+        constraints: String,
+        /// Input operands
+        inputs: Vec<VReg>,
+        /// Output types (for each output constraint)
+        output_types: Vec<IrType>,
+        /// Whether the assembly has side effects
+        has_side_effects: bool,
+        /// Whether the assembly may unwind
+        align_stack: bool,
+        /// Assembly dialect: 0 = AT&T, 1 = Intel
+        dialect: u8,
+    },
 }
 
 /// Comparison operators
@@ -393,6 +412,16 @@ impl fmt::Display for Instruction {
             InstrKind::Select(cond, t, e) => write!(f, "select {}, {}, {}", cond, t, e),
             InstrKind::GlobalRef(name) => write!(f, "globalref @{}", name),
             InstrKind::FuncRef(name) => write!(f, "funcref @{}", name),
+            InstrKind::InlineAsm { template, constraints, inputs, .. } => {
+                write!(f, "asm \"{}\" \"{}\" (", template, constraints)?;
+                for (i, input) in inputs.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", input)?;
+                }
+                write!(f, ")")
+            }
         }
     }
 }

@@ -1977,6 +1977,11 @@ impl<'src> Parser<'src> {
             });
         }
 
+        // Inline assembly: asm!("template", operands..., options(...))
+        if self.check(TokenKind::Asm) {
+            return self.parse_inline_asm();
+        }
+
         // Control flow
         if self.check(TokenKind::If) {
             return self.parse_if();
@@ -2447,6 +2452,229 @@ impl<'src> Parser<'src> {
             kind: ExprKind::Join { futures },
             span: Span::new(start, self.previous.span.end),
         })
+    }
+
+    /// Parse inline assembly: `asm!("template", operands..., options(...))`
+    ///
+    /// Syntax:
+    /// ```text
+    /// asm!("cli", options(nomem, nostack))
+    /// asm!("mov {}, cr3", out(reg) cr3, options(nomem, nostack))
+    /// asm!("out dx, al", in("dx") port, in("al") value, options(nomem, nostack))
+    /// ```
+    fn parse_inline_asm(&mut self) -> ParseResult<Expr> {
+        use ast::{AsmOperand, AsmOperandKind, AsmOptions, AsmRegSpec};
+
+        let start = self.current.span.start;
+        self.expect(TokenKind::Asm)?;
+        self.expect(TokenKind::Not)?;
+        self.expect(TokenKind::LParen)?;
+
+        // Parse the assembly template string
+        if !self.check(TokenKind::StringLiteral) {
+            return Err(ParseError::UnexpectedToken {
+                expected: "assembly template string".to_string(),
+                found: self.current.kind.clone(),
+                span: self.current.span,
+            });
+        }
+        let template_token = self.advance();
+        let template = parse_string(self.text(&template_token));
+
+        let mut operands = Vec::new();
+        let mut options = AsmOptions::default();
+
+        // Parse operands and options (comma-separated)
+        while self.consume(TokenKind::Comma) {
+            let op_start = self.current.span.start;
+
+            // Check for options(...)
+            if self.check(TokenKind::Ident) && self.text(&self.current) == "options" {
+                self.advance(); // consume "options"
+                self.expect(TokenKind::LParen)?;
+                options = self.parse_asm_options()?;
+                self.expect(TokenKind::RParen)?;
+                continue;
+            }
+
+            // Parse operand: in(reg) expr, out(reg) expr, inout(reg) expr, const expr, sym path
+            let operand_kind = if self.check(TokenKind::In) {
+                self.advance(); // consume "in"
+                self.expect(TokenKind::LParen)?;
+                let reg = self.parse_asm_reg_spec()?;
+                self.expect(TokenKind::RParen)?;
+                let expr = self.parse_expr()?;
+                AsmOperandKind::In {
+                    reg,
+                    expr: Box::new(expr),
+                }
+            } else if self.check(TokenKind::Ident) {
+                let ident_text = self.text(&self.current).to_string();
+                match ident_text.as_str() {
+                    "out" => {
+                        self.advance(); // consume "out"
+                        self.expect(TokenKind::LParen)?;
+                        let reg = self.parse_asm_reg_spec()?;
+                        self.expect(TokenKind::RParen)?;
+                        // out can have optional expression (underscore for discard)
+                        let expr = if self.check(TokenKind::Ident) && self.text(&self.current) == "_" {
+                            self.advance();
+                            None
+                        } else {
+                            Some(Box::new(self.parse_expr()?))
+                        };
+                        AsmOperandKind::Out {
+                            reg,
+                            expr,
+                            late: false,
+                        }
+                    }
+                    "lateout" => {
+                        self.advance(); // consume "lateout"
+                        self.expect(TokenKind::LParen)?;
+                        let reg = self.parse_asm_reg_spec()?;
+                        self.expect(TokenKind::RParen)?;
+                        let expr = if self.check(TokenKind::Ident) && self.text(&self.current) == "_" {
+                            self.advance();
+                            None
+                        } else {
+                            Some(Box::new(self.parse_expr()?))
+                        };
+                        AsmOperandKind::Out {
+                            reg,
+                            expr,
+                            late: true,
+                        }
+                    }
+                    "inout" => {
+                        self.advance(); // consume "inout"
+                        self.expect(TokenKind::LParen)?;
+                        let reg = self.parse_asm_reg_spec()?;
+                        self.expect(TokenKind::RParen)?;
+                        let expr = self.parse_expr()?;
+                        AsmOperandKind::InOut {
+                            reg,
+                            expr: Box::new(expr),
+                            late: false,
+                        }
+                    }
+                    "inlateout" => {
+                        self.advance(); // consume "inlateout"
+                        self.expect(TokenKind::LParen)?;
+                        let reg = self.parse_asm_reg_spec()?;
+                        self.expect(TokenKind::RParen)?;
+                        let expr = self.parse_expr()?;
+                        AsmOperandKind::InOut {
+                            reg,
+                            expr: Box::new(expr),
+                            late: true,
+                        }
+                    }
+                    "const" => {
+                        self.advance(); // consume "const"
+                        let expr = self.parse_expr()?;
+                        AsmOperandKind::Const {
+                            expr: Box::new(expr),
+                        }
+                    }
+                    "sym" => {
+                        self.advance(); // consume "sym"
+                        let path = self.parse_path()?;
+                        AsmOperandKind::Sym { path }
+                    }
+                    _ => {
+                        return Err(ParseError::Custom {
+                            message: format!("unknown asm operand kind: {}", ident_text),
+                            span: self.current.span,
+                        });
+                    }
+                }
+            } else {
+                return Err(ParseError::Custom {
+                    message: "expected asm operand (in, out, inout, const, sym) or options".to_string(),
+                    span: self.current.span,
+                });
+            };
+
+            operands.push(AsmOperand {
+                kind: operand_kind,
+                span: Span::new(op_start, self.previous.span.end),
+            });
+        }
+
+        self.expect(TokenKind::RParen)?;
+
+        Ok(Expr {
+            kind: ExprKind::InlineAsm {
+                template,
+                operands,
+                options,
+            },
+            span: Span::new(start, self.previous.span.end),
+        })
+    }
+
+    /// Parse register specification for asm operand
+    fn parse_asm_reg_spec(&mut self) -> ParseResult<ast::AsmRegSpec> {
+        use ast::AsmRegSpec;
+
+        // Check for explicit register in string: "rax", "eax", etc.
+        if self.check(TokenKind::StringLiteral) {
+            let token = self.advance();
+            let reg_name = parse_string(self.text(&token));
+            return Ok(AsmRegSpec::Explicit(reg_name));
+        }
+
+        // Otherwise, it's a register class: reg, reg_byte, xmm_reg, etc.
+        if self.check(TokenKind::Ident) {
+            let token = self.advance();
+            let class_name = self.text(&token).to_string();
+            return Ok(AsmRegSpec::Class(class_name));
+        }
+
+        Err(ParseError::UnexpectedToken {
+            expected: "register class or explicit register name".to_string(),
+            found: self.current.kind.clone(),
+            span: self.current.span,
+        })
+    }
+
+    /// Parse asm options: nomem, nostack, pure, readonly, etc.
+    fn parse_asm_options(&mut self) -> ParseResult<ast::AsmOptions> {
+        let mut options = ast::AsmOptions::default();
+
+        while !self.check(TokenKind::RParen) && !self.is_at_end() {
+            if self.check(TokenKind::Ident) {
+                let opt_name = self.text(&self.current).to_string();
+                self.advance();
+
+                match opt_name.as_str() {
+                    "pure" => options.pure_ = true,
+                    "nomem" => options.nomem = true,
+                    "readonly" => options.readonly = true,
+                    "nostack" => options.nostack = true,
+                    "noreturn" => options.noreturn = true,
+                    "preserves_flags" => options.preserves_flags = true,
+                    "att_syntax" => options.att_syntax = true,
+                    "raw" => options.raw = true,
+                    _ => {
+                        return Err(ParseError::Custom {
+                            message: format!("unknown asm option: {}", opt_name),
+                            span: self.previous.span,
+                        });
+                    }
+                }
+
+                // Consume comma if present
+                if !self.consume(TokenKind::Comma) {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+
+        Ok(options)
     }
 
     // ============ Block parsing ============

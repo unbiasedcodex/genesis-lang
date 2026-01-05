@@ -2021,6 +2021,9 @@ fn token_kind_to_string(kind: &TokenKind) -> String {
         // Special
         TokenKind::Ident => "<ident>".to_string(),
         TokenKind::Eof => "".to_string(),
+
+        // Inline assembly
+        TokenKind::Asm => "asm".to_string(),
     }
 }
 

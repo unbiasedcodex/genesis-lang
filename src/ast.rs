@@ -402,6 +402,75 @@ pub struct ReprAttr {
     pub align: Option<u64>,
 }
 
+// ============ Inline Assembly ============
+
+/// Operand for inline assembly
+#[derive(Debug, Clone)]
+pub struct AsmOperand {
+    pub kind: AsmOperandKind,
+    pub span: Span,
+}
+
+/// Kind of inline assembly operand
+#[derive(Debug, Clone)]
+pub enum AsmOperandKind {
+    /// Input operand: `in(reg) expr` or `in("rax") expr`
+    In {
+        reg: AsmRegSpec,
+        expr: Box<Expr>,
+    },
+    /// Output operand: `out(reg) var` or `out("rax") var`
+    Out {
+        reg: AsmRegSpec,
+        expr: Option<Box<Expr>>,
+        late: bool,
+    },
+    /// Input/output operand: `inout(reg) var` or `inout("rax") var`
+    InOut {
+        reg: AsmRegSpec,
+        expr: Box<Expr>,
+        late: bool,
+    },
+    /// Symbolic operand (const expression): `const expr`
+    Const {
+        expr: Box<Expr>,
+    },
+    /// Symbol reference: `sym path`
+    Sym {
+        path: Path,
+    },
+}
+
+/// Register specification for asm operands
+#[derive(Debug, Clone)]
+pub enum AsmRegSpec {
+    /// Generic register class: `reg`, `reg_byte`, `xmm_reg`, etc.
+    Class(String),
+    /// Specific register: `"rax"`, `"eax"`, `"al"`, etc.
+    Explicit(String),
+}
+
+/// Options for inline assembly
+#[derive(Debug, Clone, Default)]
+pub struct AsmOptions {
+    /// pure: No side effects, can be optimized away if output unused
+    pub pure_: bool,
+    /// nomem: Does not read or write memory
+    pub nomem: bool,
+    /// readonly: Only reads memory, does not write
+    pub readonly: bool,
+    /// nostack: Does not use the stack
+    pub nostack: bool,
+    /// noreturn: Does not return (e.g., hlt in loop)
+    pub noreturn: bool,
+    /// preserves_flags: Preserves the CPU flags register
+    pub preserves_flags: bool,
+    /// att_syntax: Use AT&T syntax instead of Intel (default)
+    pub att_syntax: bool,
+    /// raw: Template is raw (no {} substitution)
+    pub raw: bool,
+}
+
 /// Macro invocation: `name!(args)`
 #[derive(Debug, Clone)]
 pub struct MacroInvocation {
@@ -655,6 +724,13 @@ pub enum ExprKind {
 
     /// Raw address-of: `&raw expr`, `&raw mut expr`
     AddrOfRaw { mutable: bool, operand: Box<Expr> },
+
+    /// Inline assembly: `asm!("template", operands..., options(...))`
+    InlineAsm {
+        template: String,
+        operands: Vec<AsmOperand>,
+        options: AsmOptions,
+    },
 }
 
 /// Block of statements

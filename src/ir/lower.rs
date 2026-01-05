@@ -3834,6 +3834,127 @@ impl Lowerer {
                 self.lower_expr_place(operand)
             }
 
+            ExprKind::InlineAsm { template, operands, options } => {
+                use crate::ast::{AsmOperandKind, AsmRegSpec};
+
+                // Build LLVM constraint string and collect input/output registers
+                let mut constraints_parts: Vec<String> = Vec::new();
+                let mut inputs: Vec<VReg> = Vec::new();
+                let mut output_types: Vec<IrType> = Vec::new();
+
+                // Process operands to build LLVM constraint string
+                for operand in operands {
+                    match &operand.kind {
+                        AsmOperandKind::In { reg, expr } => {
+                            // Lower the input expression
+                            let input_val = self.lower_expr(expr);
+                            inputs.push(input_val);
+
+                            // Build constraint
+                            let constraint = match reg {
+                                AsmRegSpec::Class(c) => match c.as_str() {
+                                    "reg" => "r".to_string(),
+                                    "reg_byte" => "q".to_string(),
+                                    "xmm_reg" => "x".to_string(),
+                                    "ymm_reg" => "x".to_string(),
+                                    "zmm_reg" => "v".to_string(),
+                                    _ => "r".to_string(),
+                                },
+                                AsmRegSpec::Explicit(name) => format!("{{{}}}", name),
+                            };
+                            constraints_parts.push(constraint);
+                        }
+                        AsmOperandKind::Out { reg, expr, late: _ } => {
+                            // Output constraint
+                            let constraint = match reg {
+                                AsmRegSpec::Class(c) => match c.as_str() {
+                                    "reg" => "=r".to_string(),
+                                    "reg_byte" => "=q".to_string(),
+                                    "xmm_reg" => "=x".to_string(),
+                                    "ymm_reg" => "=x".to_string(),
+                                    "zmm_reg" => "=v".to_string(),
+                                    _ => "=r".to_string(),
+                                },
+                                AsmRegSpec::Explicit(name) => format!("={{{}}}",name),
+                            };
+                            constraints_parts.push(constraint);
+
+                            // Assume i64 output type by default if expression exists
+                            if expr.is_some() {
+                                output_types.push(IrType::I64);
+                            }
+                        }
+                        AsmOperandKind::InOut { reg, expr, late: _ } => {
+                            // Input/output - lower the expression
+                            let input_val = self.lower_expr(expr);
+                            inputs.push(input_val);
+
+                            // Build constraint - "+" means read+write
+                            let constraint = match reg {
+                                AsmRegSpec::Class(c) => match c.as_str() {
+                                    "reg" => "+r".to_string(),
+                                    "reg_byte" => "+q".to_string(),
+                                    "xmm_reg" => "+x".to_string(),
+                                    _ => "+r".to_string(),
+                                },
+                                AsmRegSpec::Explicit(name) => format!("+{{{}}}", name),
+                            };
+                            constraints_parts.push(constraint);
+                            output_types.push(IrType::I64);
+                        }
+                        AsmOperandKind::Const { expr } => {
+                            // Immediate constant
+                            let const_val = self.lower_expr(expr);
+                            inputs.push(const_val);
+                            constraints_parts.push("i".to_string());
+                        }
+                        AsmOperandKind::Sym { path: _ } => {
+                            // Symbol reference - not fully supported yet
+                            constraints_parts.push("X".to_string());
+                        }
+                    }
+                }
+
+                // Add clobbers based on options
+                if !options.nomem {
+                    constraints_parts.push("~{memory}".to_string());
+                }
+                if !options.preserves_flags {
+                    constraints_parts.push("~{cc}".to_string());
+                }
+
+                // Build final constraint string
+                let constraints = constraints_parts.join(",");
+
+                // Convert template: {N} -> $N for LLVM
+                let mut llvm_template = template.clone();
+                for i in 0..10 {
+                    llvm_template = llvm_template.replace(&format!("{{{}}}", i), &format!("${}", i));
+                }
+
+                // Determine side effects
+                let has_side_effects = !options.pure_ && !options.nomem;
+
+                // Determine dialect (1 = Intel, 0 = AT&T)
+                let dialect = if options.att_syntax { 0u8 } else { 1u8 };
+
+                // Emit inline assembly
+                if let Some(result) = self.builder.inline_asm(
+                    llvm_template,
+                    constraints,
+                    inputs,
+                    output_types,
+                    has_side_effects,
+                    !options.nostack,
+                    dialect,
+                ) {
+                    result
+                } else {
+                    // Void asm - return unit
+                    self.builder.const_int(0)
+                }
+            }
+
             // Other expression kinds
             _ => {
                 // Placeholder for unimplemented expressions

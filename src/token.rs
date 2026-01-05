@@ -146,6 +146,10 @@ pub enum TokenKind {
     #[token("macro_rules")]
     MacroRules,
 
+    // Inline assembly
+    #[token("asm")]
+    Asm,
+
     // ============ Types ============
 
     #[token("i8")]
@@ -359,6 +363,7 @@ impl TokenKind {
                 | TokenKind::Join
                 | TokenKind::Macro
                 | TokenKind::MacroRules
+                | TokenKind::Asm
                 | TokenKind::True
                 | TokenKind::False
         )
@@ -476,6 +481,7 @@ impl fmt::Display for TokenKind {
             TokenKind::Join => "join",
             TokenKind::Macro => "macro",
             TokenKind::MacroRules => "macro_rules",
+            TokenKind::Asm => "asm",
             TokenKind::I8 => "i8",
             TokenKind::I16 => "i16",
             TokenKind::I32 => "i32",
