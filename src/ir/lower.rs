@@ -12243,6 +12243,10 @@ impl Lowerer {
                 // dyn Trait types
                 Ty::trait_object(trait_name.clone())
             }
+            TypeKind::RawPtr { inner, mutable } => {
+                // Raw pointer types *T and *mut T
+                Ty::raw_ptr(self.ast_type_to_ty(inner), *mutable)
+            }
             _ => Ty::i64(), // Default
         }
     }

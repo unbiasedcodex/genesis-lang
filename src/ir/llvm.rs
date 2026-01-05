@@ -32,6 +32,8 @@ pub struct LLVMCodegen<'ctx> {
     vreg_types: HashMap<u32, BasicTypeEnum<'ctx>>,
     /// Map from VReg to pointee type (for Ptr types - what the pointer points to)
     pointee_types: HashMap<u32, BasicTypeEnum<'ctx>>,
+    /// Set of VRegs that are alloca results (memory addresses, not pointer values)
+    alloca_regs: std::collections::HashSet<u32>,
     /// Map from block IDs to LLVM blocks
     block_map: HashMap<u32, inkwell::basic_block::BasicBlock<'ctx>>,
     /// Current function being generated
@@ -52,6 +54,7 @@ impl<'ctx> LLVMCodegen<'ctx> {
             vreg_values: HashMap::new(),
             vreg_types: HashMap::new(),
             pointee_types: HashMap::new(),
+            alloca_regs: std::collections::HashSet::new(),
             block_map: HashMap::new(),
             current_fn: None,
             global_types: HashMap::new(),
@@ -487,6 +490,8 @@ impl<'ctx> LLVMCodegen<'ctx> {
                 let alloca = self.builder.build_alloca(llvm_ty, "alloca").unwrap();
                 // Track the type for this alloca so Load can use it
                 if let Some(vreg) = instr.result {
+                    // Mark this VReg as an alloca (memory address, not a pointer value)
+                    self.alloca_regs.insert(vreg.0);
                     self.vreg_types.insert(vreg.0, llvm_ty);
                     // For Ptr(inner) types, also track the pointee type for GetFieldPtr
                     if let IrType::Ptr(inner) = ty {
@@ -844,20 +849,36 @@ impl<'ctx> LLVMCodegen<'ctx> {
             }
             InstrKind::Load(ptr) => {
                 let ptr_val = self.get_vreg(*ptr).into_pointer_value();
-                // Use the tracked type for this pointer, or default to i64
-                let load_ty = self.vreg_types.get(&ptr.0)
-                    .copied()
-                    .unwrap_or(self.context.i64_type().into());
+
+                // Determine the type to load:
+                // - For allocas: use vreg_types (the type stored in the alloca)
+                // - For pointer values (like loaded raw pointers): use pointee_types
+                let is_alloca = self.alloca_regs.contains(&ptr.0);
+                let load_ty = if is_alloca {
+                    // Loading from an alloca - use the stored type
+                    self.vreg_types.get(&ptr.0)
+                        .copied()
+                        .unwrap_or(self.context.i64_type().into())
+                } else if let Some(pointee_ty) = self.pointee_types.get(&ptr.0) {
+                    // Dereferencing a raw pointer value - load the pointee type
+                    *pointee_ty
+                } else {
+                    // Fallback to vreg_types or i64
+                    self.vreg_types.get(&ptr.0)
+                        .copied()
+                        .unwrap_or(self.context.i64_type().into())
+                };
+
                 let loaded = self.builder.build_load(load_ty, ptr_val, "load").unwrap();
 
                 // Track types for the loaded value
                 if let Some(vreg) = instr.result {
                     if load_ty.is_pointer_type() {
-                        // We loaded a pointer - check if we know what it points to
-                        // from pointee_types (set by Alloca for Ptr types)
+                        // We loaded a pointer - track it as pointer type
+                        self.vreg_types.insert(vreg.0, load_ty);
+                        // Also propagate pointee type for dereference operations
                         if let Some(pointee_ty) = self.pointee_types.get(&ptr.0) {
-                            // Propagate the pointee type so GetFieldPtr can use it
-                            self.vreg_types.insert(vreg.0, *pointee_ty);
+                            self.pointee_types.insert(vreg.0, *pointee_ty);
                         }
                     } else if load_ty.is_struct_type() {
                         // Direct struct load - track the struct type
