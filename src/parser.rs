@@ -1520,6 +1520,20 @@ impl<'src> Parser<'src> {
         }
 
         if self.consume(TokenKind::And) {
+            // Check for &raw or &raw mut (raw pointer creation)
+            if self.check(TokenKind::Ident) && self.text(&self.current) == "raw" {
+                self.advance(); // consume "raw"
+                let mutable = self.consume(TokenKind::Mut);
+                let operand = self.parse_unary()?;
+                return Ok(Expr {
+                    kind: ExprKind::AddrOfRaw {
+                        mutable,
+                        operand: Box::new(operand),
+                    },
+                    span: Span::new(start, self.previous.span.end),
+                });
+            }
+
             let mutable = self.consume(TokenKind::Mut);
             let operand = self.parse_unary()?;
             return Ok(Expr {
@@ -1869,6 +1883,23 @@ impl<'src> Parser<'src> {
         if self.consume(TokenKind::False) {
             return Ok(Expr {
                 kind: ExprKind::Literal(Literal::Bool(false)),
+                span: Span::new(start, self.previous.span.end),
+            });
+        }
+
+        // Null pointer literal
+        if self.consume(TokenKind::Null) {
+            return Ok(Expr {
+                kind: ExprKind::Null,
+                span: Span::new(start, self.previous.span.end),
+            });
+        }
+
+        // Unsafe block: unsafe { ... }
+        if self.consume(TokenKind::Unsafe) {
+            let block = self.parse_block()?;
+            return Ok(Expr {
+                kind: ExprKind::UnsafeBlock(block),
                 span: Span::new(start, self.previous.span.end),
             });
         }
@@ -2422,6 +2453,19 @@ impl<'src> Parser<'src> {
             return Ok(Type {
                 kind: TypeKind::TraitObject {
                     trait_name: trait_ident.name,
+                },
+                span: Span::new(start, self.previous.span.end),
+            });
+        }
+
+        // Raw pointer types: *T or *mut T
+        if self.consume(TokenKind::Star) {
+            let mutable = self.consume(TokenKind::Mut);
+            let inner = self.parse_type()?;
+            return Ok(Type {
+                kind: TypeKind::RawPtr {
+                    mutable,
+                    inner: Box::new(inner),
                 },
                 span: Span::new(start, self.previous.span.end),
             });

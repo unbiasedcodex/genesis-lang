@@ -1164,6 +1164,13 @@ impl Lowerer {
                     format!("&{}", self.ast_type_to_type_name(inner))
                 }
             }
+            ast::TypeKind::RawPtr { inner, mutable } => {
+                if *mutable {
+                    format!("*mut {}", self.ast_type_to_type_name(inner))
+                } else {
+                    format!("*{}", self.ast_type_to_type_name(inner))
+                }
+            }
             ast::TypeKind::FnPtr { params, return_type } => {
                 let param_strs: Vec<String> = params.iter()
                     .map(|p| self.ast_type_to_type_name(p))
@@ -3740,6 +3747,23 @@ impl Lowerer {
                         }
                     }
                 }
+            }
+
+            ExprKind::UnsafeBlock(block) => {
+                // Unsafe block - same as regular block for IR lowering
+                // Safety checking is done during type checking
+                self.lower_block(block).unwrap_or_else(|| self.builder.const_int(0))
+            }
+
+            ExprKind::Null => {
+                // Null pointer literal - just 0 as a pointer
+                self.builder.const_int(0)
+            }
+
+            ExprKind::AddrOfRaw { operand, .. } => {
+                // &raw expr or &raw mut expr - get address of operand
+                // Use lower_expr_place to get the address
+                self.lower_expr_place(operand)
             }
 
             // Other expression kinds
@@ -12490,6 +12514,7 @@ impl Lowerer {
                 }
             }
             TyKind::Ref { inner, .. } => IrType::ptr(self.ty_to_ir_type(inner)),
+            TyKind::RawPtr { pointee, .. } => IrType::ptr(self.ty_to_ir_type(pointee)),
             TyKind::Array { element, size } => {
                 IrType::array(self.ty_to_ir_type(element), *size)
             }

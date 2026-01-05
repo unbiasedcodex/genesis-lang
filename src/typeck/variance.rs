@@ -157,6 +157,11 @@ impl VarianceAnalyzer {
                 self.compute_variance(inner, param, position.compose(Variance::Invariant))
             }
 
+            // Raw pointers: invariant (unsafe, no subtyping guarantees)
+            TyKind::RawPtr { pointee, .. } => {
+                self.compute_variance(pointee, param, position.compose(Variance::Invariant))
+            }
+
             // Array: covariant in element type (immutable semantics)
             TyKind::Array { element, .. } => {
                 self.compute_variance(element, param, position.compose(Variance::Covariant))

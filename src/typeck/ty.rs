@@ -146,6 +146,13 @@ impl Ty {
         })
     }
 
+    pub fn raw_ptr(pointee: Ty, mutable: bool) -> Self {
+        Self::new(TyKind::RawPtr {
+            pointee: Box::new(pointee),
+            mutable,
+        })
+    }
+
     pub fn array(element: Ty, size: usize) -> Self {
         Self::new(TyKind::Array {
             element: Box::new(element),
@@ -259,6 +266,7 @@ impl Ty {
         match &self.kind {
             TyKind::Var(_) | TyKind::IntVar | TyKind::FloatVar => true,
             TyKind::Ref { inner, .. } => inner.has_vars(),
+            TyKind::RawPtr { pointee, .. } => pointee.has_vars(),
             TyKind::Array { element, .. } => element.has_vars(),
             TyKind::Slice { element } => element.has_vars(),
             TyKind::Tuple(elements) => elements.iter().any(|t| t.has_vars()),
@@ -275,6 +283,7 @@ impl Ty {
         match &self.kind {
             TyKind::Generic { .. } => true,
             TyKind::Ref { inner, .. } => inner.has_generics(),
+            TyKind::RawPtr { pointee, .. } => pointee.has_generics(),
             TyKind::Array { element, .. } => element.has_generics(),
             TyKind::Slice { element } => element.has_generics(),
             TyKind::Tuple(elements) => elements.iter().any(|t| t.has_generics()),
@@ -292,6 +301,9 @@ impl Ty {
             TyKind::Var(v) => subst.get(*v).cloned().unwrap_or_else(|| self.clone()),
             TyKind::Ref { inner, mutable } => {
                 Ty::reference(inner.apply(subst), *mutable)
+            }
+            TyKind::RawPtr { pointee, mutable } => {
+                Ty::raw_ptr(pointee.apply(subst), *mutable)
             }
             TyKind::Array { element, size } => {
                 Ty::array(element.apply(subst), *size)
@@ -333,6 +345,7 @@ impl Ty {
                 }
             }
             TyKind::Ref { inner, .. } => inner.collect_vars(vars),
+            TyKind::RawPtr { pointee, .. } => pointee.collect_vars(vars),
             TyKind::Array { element, .. } => element.collect_vars(vars),
             TyKind::Slice { element } => element.collect_vars(vars),
             TyKind::Tuple(elements) => {
@@ -375,6 +388,13 @@ impl fmt::Display for Ty {
                     write!(f, "&mut {}", inner)
                 } else {
                     write!(f, "&{}", inner)
+                }
+            }
+            TyKind::RawPtr { pointee, mutable } => {
+                if *mutable {
+                    write!(f, "*mut {}", pointee)
+                } else {
+                    write!(f, "*{}", pointee)
                 }
             }
             TyKind::Array { element, size } => write!(f, "[{}; {}]", element, size),
@@ -460,6 +480,8 @@ pub enum TyKind {
     // ============ Compound Types ============
     /// Reference: `&T` or `&mut T`
     Ref { inner: Box<Ty>, mutable: bool },
+    /// Raw pointer: `*T` or `*mut T`
+    RawPtr { pointee: Box<Ty>, mutable: bool },
     /// Array: `[T; N]`
     Array { element: Box<Ty>, size: usize },
     /// Slice: `[T]`

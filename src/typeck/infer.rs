@@ -19,7 +19,7 @@ use crate::typeck::context::{TypeContext, FnSig, ImplDef as CtxImplDef, ActorDef
 use crate::typeck::error::{TypeError, TypeResult};
 use crate::typeck::exhaustiveness::{ExhaustivenessChecker, format_missing_patterns};
 use crate::typeck::ownership::OwnershipChecker;
-use crate::typeck::ty::{Ty, TyKind};
+use crate::typeck::ty::{Ty, TyKind, IntTy, UintTy};
 use crate::typeck::unify::Unifier;
 use crate::macro_expand::MacroExpander;
 
@@ -1706,6 +1706,8 @@ impl TypeInference {
                 let resolved_ty = self.unifier.apply(&operand_ty);
                 match &resolved_ty.kind {
                     TyKind::Ref { inner, .. } => Ok((**inner).clone()),
+                    // Support dereferencing raw pointers
+                    TyKind::RawPtr { pointee, .. } => Ok((**pointee).clone()),
                     // Support dereferencing Box<T> and other smart pointers
                     TyKind::Named { name, generics } if name == "Box" => {
                         if let Some(inner) = generics.first() {
@@ -2050,6 +2052,23 @@ impl TypeInference {
                         }
                     }
                 }
+            }
+
+            ExprKind::UnsafeBlock(block) => {
+                // Unsafe block - type check contents and return block type
+                self.infer_block(block)
+            }
+
+            ExprKind::Null => {
+                // null has type *T where T is a fresh type variable
+                // The actual type will be inferred from context
+                Ok(Ty::raw_ptr(Ty::fresh_var(), false))
+            }
+
+            ExprKind::AddrOfRaw { mutable, operand } => {
+                // &raw expr or &raw mut expr - creates a raw pointer
+                let operand_ty = self.infer_expr(operand)?;
+                Ok(Ty::raw_ptr(operand_ty, *mutable))
             }
         }
     }
@@ -2661,6 +2680,9 @@ impl TypeInference {
             AstTypeKind::Reference { mutable, inner } => {
                 Ty::reference(self.ast_type_to_ty(inner), *mutable)
             }
+            AstTypeKind::RawPtr { mutable, inner } => {
+                Ty::raw_ptr(self.ast_type_to_ty(inner), *mutable)
+            }
             AstTypeKind::Array { element, size } => {
                 // Evaluate array size at compile time
                 let size_val = self.const_eval_usize(size).unwrap_or(0);
@@ -2715,6 +2737,27 @@ impl TypeInference {
             return true;
         }
         if matches!(to.kind, TyKind::IntVar) && from.is_numeric() {
+            return true;
+        }
+
+        // Raw pointer casts
+        // Allow casting raw pointers to usize/isize and back
+        if matches!(from.kind, TyKind::RawPtr { .. }) && matches!(to.kind, TyKind::Uint(UintTy::Usize) | TyKind::Int(IntTy::Isize)) {
+            return true;
+        }
+        if matches!(from.kind, TyKind::Uint(UintTy::Usize) | TyKind::Int(IntTy::Isize)) && matches!(to.kind, TyKind::RawPtr { .. }) {
+            return true;
+        }
+        // Allow integer literals and integers to be cast to raw pointers
+        if matches!(from.kind, TyKind::IntVar | TyKind::Int(_) | TyKind::Uint(_)) && matches!(to.kind, TyKind::RawPtr { .. }) {
+            return true;
+        }
+        // Allow casting between raw pointer types
+        if matches!(from.kind, TyKind::RawPtr { .. }) && matches!(to.kind, TyKind::RawPtr { .. }) {
+            return true;
+        }
+        // Allow casting references to raw pointers
+        if matches!(from.kind, TyKind::Ref { .. }) && matches!(to.kind, TyKind::RawPtr { .. }) {
             return true;
         }
 

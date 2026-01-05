@@ -451,6 +451,9 @@ pub enum TypeKind {
 
     /// Trait object: `dyn Trait`
     TraitObject { trait_name: String },
+
+    /// Raw pointer: `*T` (immutable), `*mut T` (mutable)
+    RawPtr { mutable: bool, inner: Box<Type> },
 }
 
 // ============ Expressions ============
@@ -627,6 +630,15 @@ pub enum ExprKind {
 
     /// Macro invocation: `vec![1, 2, 3]`
     MacroCall(MacroInvocation),
+
+    /// Unsafe block: `unsafe { ... }`
+    UnsafeBlock(Block),
+
+    /// Null pointer literal: `null`
+    Null,
+
+    /// Raw address-of: `&raw expr`, `&raw mut expr`
+    AddrOfRaw { mutable: bool, operand: Box<Expr> },
 }
 
 /// Block of statements

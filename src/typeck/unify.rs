@@ -132,6 +132,16 @@ impl Unifier {
                 }
             }
 
+            // Raw pointers - invariant (like mutable references)
+            (TyKind::RawPtr { pointee: p1, mutable: m1 }, TyKind::RawPtr { pointee: p2, mutable: m2 }) => {
+                // For raw pointers, mutability must match (or be coercible)
+                // and pointee types must unify
+                let inner = self.unify_impl(p1, p2, span)?;
+                // Use the mutability from the expected type (t2) if they differ
+                let mutable = if m1 == m2 { *m1 } else { *m2 };
+                Ok(Ty::raw_ptr(inner, mutable))
+            }
+
             // Arrays
             (TyKind::Array { element: e1, size: s1 }, TyKind::Array { element: e2, size: s2 }) => {
                 if s1 != s2 {
@@ -280,6 +290,12 @@ impl Unifier {
                     mutable: *mutable,
                 },
             },
+            TyKind::RawPtr { pointee, mutable } => Ty {
+                kind: TyKind::RawPtr {
+                    pointee: Box::new(self.default_type_vars(pointee)),
+                    mutable: *mutable,
+                },
+            },
             TyKind::Array { element, size } => Ty {
                 kind: TyKind::Array {
                     element: Box::new(self.default_type_vars(element)),
@@ -350,6 +366,12 @@ pub fn is_assignable(from: &Ty, to: &Ty) -> bool {
         (TyKind::Ref { inner: i1, mutable: m1 }, TyKind::Ref { inner: i2, mutable: m2 }) => {
             // Can coerce &mut T to &T
             (*m1 || !*m2) && is_assignable(i1, i2)
+        }
+
+        // Raw pointers: *T is assignable to *T
+        (TyKind::RawPtr { pointee: p1, mutable: m1 }, TyKind::RawPtr { pointee: p2, mutable: m2 }) => {
+            // Can coerce *mut T to *T
+            (*m1 || !*m2) && is_assignable(p1, p2)
         }
 
         // Arrays must have same size

@@ -1980,6 +1980,10 @@ fn token_kind_to_string(kind: &TokenKind) -> String {
         TokenKind::Where => "where".to_string(),
         TokenKind::Dyn => "dyn".to_string(),
 
+        // Unsafe and null keywords
+        TokenKind::Unsafe => "unsafe".to_string(),
+        TokenKind::Null => "null".to_string(),
+
         // Async keywords
         TokenKind::Async => "async".to_string(),
         TokenKind::Await => "await".to_string(),

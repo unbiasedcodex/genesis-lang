@@ -480,6 +480,13 @@ fn format_ast_type(ty: &genesis::ast::Type) -> String {
         genesis::ast::TypeKind::SelfType => "Self".to_string(),
         genesis::ast::TypeKind::Projection { base, assoc_name } => format!("{}::{}", format_ast_type(base), assoc_name),
         genesis::ast::TypeKind::TraitObject { trait_name } => format!("dyn {}", trait_name),
+        genesis::ast::TypeKind::RawPtr { mutable, inner } => {
+            if *mutable {
+                format!("*mut {}", format_ast_type(inner))
+            } else {
+                format!("*{}", format_ast_type(inner))
+            }
+        }
     }
 }
 

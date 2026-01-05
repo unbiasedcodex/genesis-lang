@@ -201,6 +201,7 @@ impl MonomorphCollector {
                 }
             }
             TyKind::Ref { inner, .. } => self.collect_from_type(inner),
+            TyKind::RawPtr { pointee, .. } => self.collect_from_type(pointee),
             TyKind::Array { element, .. } => self.collect_from_type(element),
             TyKind::Slice { element } => self.collect_from_type(element),
             TyKind::Tuple(elements) => {
@@ -267,6 +268,10 @@ impl MonomorphCollector {
             TyKind::Ref { inner, mutable } => {
                 let prefix = if *mutable { "refmut" } else { "ref" };
                 format!("{}_{}", prefix, Self::ty_to_suffix(inner))
+            }
+            TyKind::RawPtr { pointee, mutable } => {
+                let prefix = if *mutable { "ptrmut" } else { "ptr" };
+                format!("{}_{}", prefix, Self::ty_to_suffix(pointee))
             }
             TyKind::Array { element, size } => {
                 format!("arr{}_{}", size, Self::ty_to_suffix(element))
