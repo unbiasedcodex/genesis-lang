@@ -1,0 +1,250 @@
+// Mini-Kernel Integration Test
+// Tests all pre-kernel features: freestanding, raw pointers, volatile, repr, asm!
+
+// ============================================================
+// Data Structures with repr attributes
+// ============================================================
+
+// VGA character entry - packed for exact hardware layout
+#[repr(C, packed)]
+struct VgaChar {
+    character: u8,
+    color: u8,
+}
+
+// GDT Entry - exactly 8 bytes, packed
+#[repr(C, packed)]
+struct GdtEntry {
+    limit_low: u16,
+    base_low: u16,
+    base_middle: u8,
+    access: u8,
+    granularity: u8,
+    base_high: u8,
+}
+
+// GDT Pointer for lgdt instruction
+#[repr(C, packed)]
+struct GdtPtr {
+    limit: u16,
+    base: u64,
+}
+
+// ============================================================
+// VGA Text Mode
+// ============================================================
+
+fn vga_color(fg: i64, bg: i64) -> u8 {
+    // bg << 4 | fg, using multiplication since << not available as infix
+    let mut result: u8 = (bg * 16) as u8;
+    result |= fg as u8;
+    result
+}
+
+// Write a character at position (using i64 params for easier literal use)
+fn vga_write(x: i64, y: i64, ch: i64, color: u8) {
+    let offset = (y * 80 + x) * 2;
+    let addr = 0xB8000 + offset;
+    let ptr = addr as *mut u8;
+
+    unsafe {
+        volatile_write_u8(ptr, ch as u8);
+        let color_ptr = (addr + 1) as *mut u8;
+        volatile_write_u8(color_ptr, color);
+    }
+}
+
+// Clear the screen
+fn vga_clear() {
+    let color = vga_color(15, 0);  // white on black
+    let mut i: i64 = 0;
+    while i < 80 * 25 {
+        vga_write(i % 80, i / 80, 32, color);  // space
+        i = i + 1;
+    }
+}
+
+// ============================================================
+// CPU Control Functions (via inline assembly)
+// ============================================================
+
+fn cli() {
+    unsafe {
+        asm!("cli", options(nomem, nostack));
+    }
+}
+
+fn hlt() {
+    unsafe {
+        asm!("hlt", options(nomem, nostack));
+    }
+}
+
+fn memory_barrier() {
+    unsafe {
+        asm!("mfence", options(nostack));
+    }
+}
+
+fn nop() {
+    unsafe {
+        asm!("nop", options(nomem, nostack, pure));
+    }
+}
+
+fn pause() {
+    unsafe {
+        asm!("pause", options(nomem, nostack));
+    }
+}
+
+// ============================================================
+// Size/Alignment Verification
+// ============================================================
+
+fn verify_struct_sizes() -> bool {
+    let vga_size = size_of::<VgaChar>();
+    let gdt_size = size_of::<GdtEntry>();
+    let ptr_size = size_of::<GdtPtr>();
+    let vga_align = align_of::<VgaChar>();
+    let gdt_align = align_of::<GdtEntry>();
+
+    // VgaChar=2, GdtEntry=8, GdtPtr=10, packed alignment=1
+    vga_size == 2 && gdt_size == 8 && ptr_size == 10 && vga_align == 1 && gdt_align == 1
+}
+
+// ============================================================
+// Test Functions
+// ============================================================
+
+fn test_raw_pointers() -> bool {
+    let null_ptr: *i64 = null;
+    let addr: *mut i64 = 0x1000 as *mut i64;
+    let value: i64 = 0x12345678;
+    let ptr: *i64 = &raw value;
+    true
+}
+
+fn test_volatile() -> bool {
+    let mut test_val: i64 = 0;
+    let ptr: *mut i64 = &raw mut test_val;
+
+    unsafe {
+        volatile_write_i64(ptr, 42);
+        memory_barrier();
+        let read_val = volatile_read_i64(ptr);
+        read_val == 42
+    }
+}
+
+fn test_asm() -> bool {
+    nop();
+    pause();
+    memory_barrier();
+    true
+}
+
+// ============================================================
+// Main Kernel Entry Point
+// ============================================================
+
+fn _start() {
+    cli();
+    vga_clear();
+
+    let green = vga_color(10, 0);
+    let white = vga_color(15, 0);
+
+    // "Genesis" = 71 101 110 101 115 105 115
+    vga_write(0, 0, 71, green);   // G
+    vga_write(1, 0, 101, green);  // e
+    vga_write(2, 0, 110, green);  // n
+    vga_write(3, 0, 101, green);  // e
+    vga_write(4, 0, 115, green);  // s
+    vga_write(5, 0, 105, green);  // i
+    vga_write(6, 0, 115, green);  // s
+
+    vga_write(7, 0, 32, white);   // space
+
+    // "Kernel" = 75 101 114 110 101 108
+    vga_write(8, 0, 75, green);   // K
+    vga_write(9, 0, 101, green);  // e
+    vga_write(10, 0, 114, green); // r
+    vga_write(11, 0, 110, green); // n
+    vga_write(12, 0, 101, green); // e
+    vga_write(13, 0, 108, green); // l
+
+    let mut tests_passed: i64 = 0;
+
+    // Test 1: Raw Pointers
+    if test_raw_pointers() {
+        vga_write(0, 2, 49, green);  // 1
+        vga_write(1, 2, 46, white);  // .
+        vga_write(2, 2, 80, white);  // P
+        vga_write(3, 2, 116, white); // t
+        vga_write(4, 2, 114, white); // r
+        vga_write(5, 2, 32, white);  // space
+        vga_write(6, 2, 79, green);  // O
+        vga_write(7, 2, 75, green);  // K
+        tests_passed = tests_passed + 1;
+    }
+
+    // Test 2: Volatile
+    if test_volatile() {
+        vga_write(0, 3, 50, green);  // 2
+        vga_write(1, 3, 46, white);  // .
+        vga_write(2, 3, 86, white);  // V
+        vga_write(3, 3, 111, white); // o
+        vga_write(4, 3, 108, white); // l
+        vga_write(5, 3, 32, white);  // space
+        vga_write(6, 3, 79, green);  // O
+        vga_write(7, 3, 75, green);  // K
+        tests_passed = tests_passed + 1;
+    }
+
+    // Test 3: ASM
+    if test_asm() {
+        vga_write(0, 4, 51, green);  // 3
+        vga_write(1, 4, 46, white);  // .
+        vga_write(2, 4, 65, white);  // A
+        vga_write(3, 4, 83, white);  // S
+        vga_write(4, 4, 77, white);  // M
+        vga_write(5, 4, 32, white);  // space
+        vga_write(6, 4, 79, green);  // O
+        vga_write(7, 4, 75, green);  // K
+        tests_passed = tests_passed + 1;
+    }
+
+    // Test 4: Repr
+    if verify_struct_sizes() {
+        vga_write(0, 5, 52, green);  // 4
+        vga_write(1, 5, 46, white);  // .
+        vga_write(2, 5, 82, white);  // R
+        vga_write(3, 5, 101, white); // e
+        vga_write(4, 5, 112, white); // p
+        vga_write(5, 5, 32, white);  // space
+        vga_write(6, 5, 79, green);  // O
+        vga_write(7, 5, 75, green);  // K
+        tests_passed = tests_passed + 1;
+    }
+
+    // Result line: "Tests: X/4"
+    vga_write(0, 7, 84, white);  // T
+    vga_write(1, 7, 101, white); // e
+    vga_write(2, 7, 115, white); // s
+    vga_write(3, 7, 116, white); // t
+    vga_write(4, 7, 115, white); // s
+    vga_write(5, 7, 58, white);  // :
+    vga_write(6, 7, 32, white);  // space
+
+    // Show result count: 48 + tests_passed = '0' + tests_passed
+    let result_color = if tests_passed == 4 { green } else { vga_color(4, 0) };
+    vga_write(7, 7, 48 + tests_passed, result_color);
+    vga_write(8, 7, 47, white);  // /
+    vga_write(9, 7, 52, white);  // 4
+
+    // Halt loop
+    loop {
+        hlt();
+    }
+}
