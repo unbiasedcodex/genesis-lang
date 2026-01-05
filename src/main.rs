@@ -57,6 +57,14 @@ enum Commands {
         #[arg(long)]
         freestanding: bool,
 
+        /// Custom linker script (for kernel/embedded)
+        #[arg(long, value_name = "FILE")]
+        linker_script: Option<PathBuf>,
+
+        /// Emit object file only (do not link)
+        #[arg(long)]
+        emit_obj: bool,
+
         /// Optimization level (0-3)
         #[arg(short = 'O', long, default_value = "2")]
         opt_level: u8,
@@ -101,6 +109,8 @@ fn main() -> miette::Result<()> {
             emit_llvm,
             native,
             freestanding,
+            linker_script,
+            emit_obj,
             opt_level,
         } => {
             let source = fs::read_to_string(&input)
@@ -180,7 +190,7 @@ fn main() -> miette::Result<()> {
                     }
 
                     // LLVM code generation
-                    if emit_llvm || native {
+                    if emit_llvm || native || emit_obj {
                         let context = Context::create();
                         let mut codegen = LLVMCodegen::new(&context, &module.name);
                         codegen.compile_module(&module);
@@ -202,13 +212,28 @@ fn main() -> miette::Result<()> {
                             println!("{}", codegen.get_llvm_ir());
                         }
 
-                        if native {
+                        if native || emit_obj {
                             let out_path = output.unwrap_or_else(|| {
-                                input.with_extension("")
+                                if emit_obj {
+                                    input.with_extension("o")
+                                } else {
+                                    input.with_extension("")
+                                }
                             });
-                            println!("\nGenerating native executable: {}", out_path.display());
 
-                            match compile_to_executable(&module, &out_path, opt, freestanding) {
+                            let link_opts = genesis::ir::LinkOptions {
+                                freestanding,
+                                linker_script,
+                                emit_obj,
+                            };
+
+                            if emit_obj {
+                                println!("\nGenerating object file: {}", out_path.display());
+                            } else {
+                                println!("\nGenerating native executable: {}", out_path.display());
+                            }
+
+                            match compile_to_executable(&module, &out_path, opt, &link_opts) {
                                 Ok(()) => {
                                     println!("Successfully compiled to: {}", out_path.display());
                                 }

@@ -1609,12 +1609,23 @@ impl Default for OptLevel {
     }
 }
 
+/// Linker options for compile_to_executable
+#[derive(Debug, Clone, Default)]
+pub struct LinkOptions {
+    /// Freestanding mode (no libc)
+    pub freestanding: bool,
+    /// Custom linker script path
+    pub linker_script: Option<std::path::PathBuf>,
+    /// Emit object file only (do not link)
+    pub emit_obj: bool,
+}
+
 /// Compile Genesis IR module to native executable
 pub fn compile_to_executable(
     ir_module: &Module,
     output_path: &Path,
     opt_level: OptLevel,
-    freestanding: bool,
+    link_opts: &LinkOptions,
 ) -> Result<(), String> {
     let context = Context::create();
     let mut codegen = LLVMCodegen::new(&context, &ir_module.name);
@@ -1632,15 +1643,32 @@ pub fn compile_to_executable(
     let obj_path = output_path.with_extension("o");
     codegen.write_object_file(&obj_path)?;
 
-    if freestanding {
+    // If emit_obj is set, just keep the object file and return
+    if link_opts.emit_obj {
+        // Move object file to output path if different
+        if obj_path != output_path {
+            std::fs::rename(&obj_path, output_path)
+                .map_err(|e| format!("Failed to move object file: {}", e))?;
+        }
+        return Ok(());
+    }
+
+    if link_opts.freestanding {
         // Freestanding mode: use ld directly, no libc
-        let status = std::process::Command::new("ld")
-            .arg(&obj_path)
+        let mut cmd = std::process::Command::new("ld");
+        cmd.arg(&obj_path)
             .arg("-o")
             .arg(output_path)
             .arg("--nostdlib")
             .arg("-e")
-            .arg("_start") // Entry point
+            .arg("_start"); // Entry point
+
+        // Add linker script if specified
+        if let Some(ref script) = link_opts.linker_script {
+            cmd.arg("-T").arg(script);
+        }
+
+        let status = cmd
             .status()
             .map_err(|e| format!("Failed to run linker: {}", e))?;
 
@@ -1649,12 +1677,19 @@ pub fn compile_to_executable(
         }
     } else {
         // Normal mode: link with libc
-        let status = std::process::Command::new("cc")
-            .arg(&obj_path)
+        let mut cmd = std::process::Command::new("cc");
+        cmd.arg(&obj_path)
             .arg("-o")
             .arg(output_path)
             .arg("-lc")
-            .arg("-lm") // Link with libm for math functions
+            .arg("-lm"); // Link with libm for math functions
+
+        // Add linker script if specified (pass through to linker)
+        if let Some(ref script) = link_opts.linker_script {
+            cmd.arg("-Wl,-T").arg(script);
+        }
+
+        let status = cmd
             .status()
             .map_err(|e| format!("Failed to run linker: {}", e))?;
 
