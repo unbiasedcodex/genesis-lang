@@ -894,6 +894,74 @@ impl<'ctx> LLVMCodegen<'ctx> {
                 self.builder.build_store(ptr_val, value).unwrap();
                 None
             }
+            InstrKind::VolatileLoad(ptr) => {
+                let ptr_val = self.get_vreg(*ptr).into_pointer_value();
+
+                // For volatile loads, we need to determine the type like regular loads
+                let is_alloca = self.alloca_regs.contains(&ptr.0);
+                let load_ty = if is_alloca {
+                    self.vreg_types.get(&ptr.0)
+                        .copied()
+                        .unwrap_or(self.context.i64_type().into())
+                } else if let Some(pointee_ty) = self.pointee_types.get(&ptr.0) {
+                    *pointee_ty
+                } else {
+                    self.vreg_types.get(&ptr.0)
+                        .copied()
+                        .unwrap_or(self.context.i64_type().into())
+                };
+
+                // Build volatile load with volatile flag
+                let load_instr = self.builder.build_load(load_ty, ptr_val, "volatile_load").unwrap();
+                // Set volatile flag on the load instruction
+                // BasicValueEnum doesn't have as_instruction, we need to extract the underlying value first
+                match &load_instr {
+                    inkwell::values::BasicValueEnum::IntValue(iv) => {
+                        if let Some(instr) = iv.as_instruction() {
+                            let _ = instr.set_volatile(true);
+                        }
+                    }
+                    inkwell::values::BasicValueEnum::FloatValue(fv) => {
+                        if let Some(instr) = fv.as_instruction() {
+                            let _ = instr.set_volatile(true);
+                        }
+                    }
+                    inkwell::values::BasicValueEnum::PointerValue(pv) => {
+                        if let Some(instr) = pv.as_instruction() {
+                            let _ = instr.set_volatile(true);
+                        }
+                    }
+                    inkwell::values::BasicValueEnum::StructValue(sv) => {
+                        if let Some(instr) = sv.as_instruction() {
+                            let _ = instr.set_volatile(true);
+                        }
+                    }
+                    _ => {}
+                }
+                let loaded = load_instr;
+
+                // Track types for the loaded value (same as regular load)
+                if let Some(vreg) = instr.result {
+                    if load_ty.is_pointer_type() {
+                        self.vreg_types.insert(vreg.0, load_ty);
+                        if let Some(pointee_ty) = self.pointee_types.get(&ptr.0) {
+                            self.pointee_types.insert(vreg.0, *pointee_ty);
+                        }
+                    } else if load_ty.is_struct_type() {
+                        self.vreg_types.insert(vreg.0, load_ty);
+                    }
+                }
+
+                Some(loaded)
+            }
+            InstrKind::VolatileStore(ptr, val) => {
+                let ptr_val = self.get_vreg(*ptr).into_pointer_value();
+                let value = self.get_vreg(*val);
+                let store = self.builder.build_store(ptr_val, value).unwrap();
+                // Set volatile flag
+                store.set_volatile(true).unwrap();
+                None
+            }
             InstrKind::GetFieldPtr(ptr, idx) => {
                 let ptr_val = self.get_vreg(*ptr).into_pointer_value();
                 // Get the struct type from the tracked type

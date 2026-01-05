@@ -631,6 +631,83 @@ impl TypeContext {
             },
         );
 
+        // ============ Volatile Operations (for kernel/embedded) ============
+        // Volatile read/write intrinsics for hardware I/O - prevents optimization
+
+        // volatile_read(ptr: *T) -> T - volatile memory read (generic)
+        self.functions.insert(
+            "volatile_read".to_string(),
+            FnSig {
+                name: "volatile_read".to_string(),
+                generics: vec!["T".to_string()],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::raw_ptr(Ty::generic("T".to_string()), false)],
+                ret: Ty::generic("T".to_string()),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // volatile_write(ptr: *mut T, val: T) - volatile memory write (generic)
+        self.functions.insert(
+            "volatile_write".to_string(),
+            FnSig {
+                name: "volatile_write".to_string(),
+                generics: vec!["T".to_string()],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![
+                    Ty::raw_ptr(Ty::generic("T".to_string()), true),
+                    Ty::generic("T".to_string()),
+                ],
+                ret: Ty::unit(),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // Concrete specializations for common types
+        for (name, ty) in [
+            ("i8", Ty::i8()), ("i16", Ty::i16()), ("i32", Ty::i32()), ("i64", Ty::i64()),
+            ("u8", Ty::u8()), ("u16", Ty::u16()), ("u32", Ty::u32()), ("u64", Ty::u64()),
+        ] {
+            self.functions.insert(
+                format!("volatile_read_{}", name),
+                FnSig {
+                    name: format!("volatile_read_{}", name),
+                    generics: vec![],
+                    generic_bounds: HashMap::new(),
+                    generic_defaults: HashMap::new(),
+                    params: vec![Ty::raw_ptr(ty.clone(), false)],
+                    ret: ty.clone(),
+                    is_method: false,
+                    is_async: false,
+                    is_pub: true,
+                    module: None,
+                },
+            );
+            self.functions.insert(
+                format!("volatile_write_{}", name),
+                FnSig {
+                    name: format!("volatile_write_{}", name),
+                    generics: vec![],
+                    generic_bounds: HashMap::new(),
+                    generic_defaults: HashMap::new(),
+                    params: vec![Ty::raw_ptr(ty.clone(), true), ty.clone()],
+                    ret: Ty::unit(),
+                    is_method: false,
+                    is_async: false,
+                    is_pub: true,
+                    module: None,
+                },
+            );
+        }
+
         // ============ Vec<T> Functions ============
 
         // Vec::new() - create empty vector

@@ -2418,6 +2418,25 @@ impl Lowerer {
                     return self.lower_read_line();
                 }
 
+                // Handle volatile memory operations (for kernel/embedded development)
+                if func_name == "volatile_read" || func_name.starts_with("volatile_read_") {
+                    // volatile_read(ptr: *T) -> T
+                    if let Some(ptr_arg) = args.first() {
+                        let ptr = self.lower_expr(ptr_arg);
+                        return self.builder.volatile_load(ptr);
+                    }
+                    return self.builder.const_int(0);
+                }
+                if func_name == "volatile_write" || func_name.starts_with("volatile_write_") {
+                    // volatile_write(ptr: *mut T, val: T)
+                    if args.len() >= 2 {
+                        let ptr = self.lower_expr(&args[0]);
+                        let val = self.lower_expr(&args[1]);
+                        self.builder.volatile_store(ptr, val);
+                    }
+                    return self.builder.const_int(0);
+                }
+
                 // Handle Box::new - heap allocation
                 if func_name == "Box::new" {
                     return self.lower_box_new(args);

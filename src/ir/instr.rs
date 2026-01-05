@@ -156,6 +156,10 @@ pub enum InstrKind {
     GetBytePtr(VReg, VReg),
     /// Load single byte from pointer
     LoadByte(VReg),
+    /// Volatile load from memory (prevents reordering/optimization)
+    VolatileLoad(VReg),
+    /// Volatile store to memory (ptr, value) (prevents reordering/optimization)
+    VolatileStore(VReg, VReg),
 
     // ============ Function Calls ============
     /// Call a function
@@ -331,6 +335,8 @@ impl fmt::Display for Instruction {
             InstrKind::GetElementPtr(ptr, idx) => write!(f, "getelementptr {}, {}", ptr, idx),
             InstrKind::GetBytePtr(ptr, offset) => write!(f, "getbyteptr {}, {}", ptr, offset),
             InstrKind::LoadByte(ptr) => write!(f, "loadbyte {}", ptr),
+            InstrKind::VolatileLoad(ptr) => write!(f, "volatile_load {}", ptr),
+            InstrKind::VolatileStore(ptr, val) => write!(f, "volatile_store {}, {}", ptr, val),
             InstrKind::Call { func, args } => {
                 write!(f, "call {}(", func)?;
                 for (i, arg) in args.iter().enumerate() {

@@ -872,6 +872,16 @@ impl IrBuilder {
         self.emit(None, InstrKind::Store(ptr, value));
     }
 
+    /// Volatile load - prevents compiler reordering and optimization
+    pub fn volatile_load(&mut self, ptr: VReg) -> VReg {
+        self.emit_with_result(InstrKind::VolatileLoad(ptr))
+    }
+
+    /// Volatile store - prevents compiler reordering and optimization
+    pub fn volatile_store(&mut self, ptr: VReg, value: VReg) {
+        self.emit(None, InstrKind::VolatileStore(ptr, value));
+    }
+
     pub fn get_field_ptr(&mut self, ptr: VReg, field_idx: u32) -> VReg {
         self.emit_with_result(InstrKind::GetFieldPtr(ptr, field_idx))
     }
