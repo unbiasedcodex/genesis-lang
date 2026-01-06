@@ -460,8 +460,3 @@ let y: f64 = x + 1.0;  // OK: 1.0 is float
 | `min` | Minimum of two |
 | `max` | Maximum of two |
 | `pow` | Integer power |
-
----
-
-*Documentation for Genesis Lang Math Module*
-
