@@ -1,6 +1,6 @@
 # Genesis Lang
 
-**Systems programming with memory safety — without the complexity.**
+**Systems programming with memory safety, without the complexity.**
 
 Genesis is a statically-typed, compiled language that brings memory safety to systems programming through automatic reference counting, not complex lifetime annotations. From applications to operating system kernels, Genesis provides the power you need with a familiar syntax.
 
@@ -350,4 +350,6 @@ Genesis Lang is the core language for [Genesis OS](../README.md), a new operatin
 
 ## License
 
-MIT
+MIT License
+
+Copyright (c) 2026 UnbiasedCodex
