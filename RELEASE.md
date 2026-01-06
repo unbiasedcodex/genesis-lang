@@ -169,4 +169,6 @@ fn main() -> i32 {
 
 ## License
 
-MIT
+MIT License
+
+Copyright (c) 2026 UnbiasedCodex
