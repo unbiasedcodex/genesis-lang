@@ -1,0 +1,12 @@
+// Test: Type conversion when storing to smaller types
+// Fix: Values are now properly truncated when stored to smaller slots
+
+fn main() -> i64 {
+    // i32 variable should properly store and return value
+    let x: i32 = 42;
+    let y: u32 = 100;
+
+    // Cast to i64 for return
+    let result = x as i64 + y as i64;
+    result  // Should return 142
+}

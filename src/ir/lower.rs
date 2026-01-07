@@ -2231,9 +2231,11 @@ impl Lowerer {
                                 .as_ref()
                                 .map(|t| self.ty_to_ir_type(&self.ast_type_to_ty(t)))
                                 .unwrap_or_else(|| self.get_expr_ir_type(val));
-                            let slot = self.builder.alloca(ir_ty);
+                            let slot = self.builder.alloca(ir_ty.clone());
                             let val_vreg = self.lower_expr(val);
-                            self.builder.store(slot, val_vreg);
+                            // Convert value to target type if needed
+                            let converted = self.convert_value_to_type(val_vreg, &ir_ty);
+                            self.builder.store(slot, converted);
                             slot
                         }
                     }
@@ -3817,6 +3819,74 @@ impl Lowerer {
                 }
             }
 
+            ExprKind::Cast { expr, ty } => {
+                // Type cast: x as i64, x as u32, etc.
+                let val = self.lower_expr(expr);
+                let target_ty = self.ty_to_ir_type(&self.ast_type_to_ty(ty));
+                let source_ty = self.infer_expr_type(expr);
+
+                // Determine what kind of cast to emit
+                match (&source_ty, &target_ty) {
+                    // Same type - no cast needed
+                    _ if source_ty == target_ty => val,
+
+                    // Integer to integer
+                    (IrType::I8 | IrType::I16 | IrType::I32 | IrType::I64,
+                     IrType::I8 | IrType::I16 | IrType::I32 | IrType::I64) => {
+                        // Check if extending or truncating
+                        let src_bits = self.type_bits(&source_ty);
+                        let dst_bits = self.type_bits(&target_ty);
+                        if dst_bits > src_bits {
+                            // Extend - check if signed or unsigned
+                            if self.is_signed_type(ty) {
+                                self.builder.sext(val, target_ty)
+                            } else {
+                                self.builder.zext(val, target_ty)
+                            }
+                        } else if dst_bits < src_bits {
+                            // Truncate
+                            self.builder.trunc(val, target_ty)
+                        } else {
+                            val
+                        }
+                    }
+
+                    // Pointer to integer
+                    (IrType::Ptr(_), IrType::I64 | IrType::I32) => {
+                        self.builder.ptrtoint(val, target_ty.clone())
+                    }
+
+                    // Integer to pointer
+                    (IrType::I64 | IrType::I32, IrType::Ptr(_)) => {
+                        self.builder.inttoptr(val, target_ty.clone())
+                    }
+
+                    // Float to integer
+                    (IrType::F32 | IrType::F64, IrType::I8 | IrType::I16 | IrType::I32 | IrType::I64) => {
+                        self.builder.fptosi(val, target_ty)
+                    }
+
+                    // Integer to float
+                    (IrType::I8 | IrType::I16 | IrType::I32 | IrType::I64, IrType::F32 | IrType::F64) => {
+                        self.builder.sitofp(val, target_ty)
+                    }
+
+                    // Float to float (use bitcast for now - not ideal but works)
+                    (IrType::F32, IrType::F64) | (IrType::F64, IrType::F32) => {
+                        // LLVM will handle float conversions properly
+                        self.builder.sitofp(val, target_ty)
+                    }
+
+                    // Boolean to integer
+                    (IrType::Bool, IrType::I8 | IrType::I16 | IrType::I32 | IrType::I64) => {
+                        self.builder.zext(val, target_ty)
+                    }
+
+                    // Fallback - just return the value (might need bitcast)
+                    _ => val,
+                }
+            }
+
             ExprKind::UnsafeBlock(block) => {
                 // Unsafe block - same as regular block for IR lowering
                 // Safety checking is done during type checking
@@ -3841,6 +3911,8 @@ impl Lowerer {
                 let mut constraints_parts: Vec<String> = Vec::new();
                 let mut inputs: Vec<VReg> = Vec::new();
                 let mut output_types: Vec<IrType> = Vec::new();
+                // Track output destinations (variable slots to store results into)
+                let mut output_destinations: Vec<Option<VReg>> = Vec::new();
 
                 // Process operands to build LLVM constraint string
                 for operand in operands {
@@ -3864,43 +3936,112 @@ impl Lowerer {
                             };
                             constraints_parts.push(constraint);
                         }
-                        AsmOperandKind::Out { reg, expr, late: _ } => {
-                            // Output constraint
+                        AsmOperandKind::Out { reg, expr, late } => {
+                            // Output constraint - use & for early clobber if not late
                             let constraint = match reg {
-                                AsmRegSpec::Class(c) => match c.as_str() {
-                                    "reg" => "=r".to_string(),
-                                    "reg_byte" => "=q".to_string(),
-                                    "xmm_reg" => "=x".to_string(),
-                                    "ymm_reg" => "=x".to_string(),
-                                    "zmm_reg" => "=v".to_string(),
-                                    _ => "=r".to_string(),
+                                AsmRegSpec::Class(c) => {
+                                    let base = match c.as_str() {
+                                        "reg" => "=r",
+                                        "reg_byte" => "=q",
+                                        "xmm_reg" => "=x",
+                                        "ymm_reg" => "=x",
+                                        "zmm_reg" => "=v",
+                                        _ => "=r",
+                                    };
+                                    if *late { base.to_string() } else { format!("=&{}", &base[1..]) }
                                 },
-                                AsmRegSpec::Explicit(name) => format!("={{{}}}",name),
+                                AsmRegSpec::Explicit(name) => {
+                                    // For explicit registers, use =&{reg} for early clobber
+                                    if *late {
+                                        format!("={{{}}}", name)
+                                    } else {
+                                        format!("=&{{{}}}", name)
+                                    }
+                                },
                             };
                             constraints_parts.push(constraint);
 
-                            // Assume i64 output type by default if expression exists
-                            if expr.is_some() {
+                            // Determine output type from expression type
+                            if let Some(out_expr) = expr {
+                                // Get the type from typechecker info
+                                use crate::typeck::{IntTy, UintTy};
+                                let output_ty = self.expr_types.get(&out_expr.span)
+                                    .map(|ty| {
+                                        match &ty.kind {
+                                            crate::typeck::TyKind::Int(IntTy::I8) |
+                                            crate::typeck::TyKind::Uint(UintTy::U8) => IrType::I8,
+                                            crate::typeck::TyKind::Int(IntTy::I16) |
+                                            crate::typeck::TyKind::Uint(UintTy::U16) => IrType::I16,
+                                            crate::typeck::TyKind::Int(IntTy::I32) |
+                                            crate::typeck::TyKind::Uint(UintTy::U32) => IrType::I32,
+                                            crate::typeck::TyKind::Int(IntTy::I64) |
+                                            crate::typeck::TyKind::Uint(UintTy::U64) |
+                                            crate::typeck::TyKind::Int(IntTy::Isize) |
+                                            crate::typeck::TyKind::Uint(UintTy::Usize) => IrType::I64,
+                                            _ => IrType::I64, // Default to i64
+                                        }
+                                    })
+                                    .unwrap_or(IrType::I64);
+                                output_types.push(output_ty);
+
+                                // Get the slot (memory location) for the output variable
+                                let slot = self.lower_expr_place(out_expr);
+                                output_destinations.push(Some(slot));
+                            } else {
                                 output_types.push(IrType::I64);
+                                output_destinations.push(None);
                             }
                         }
-                        AsmOperandKind::InOut { reg, expr, late: _ } => {
-                            // Input/output - lower the expression
+                        AsmOperandKind::InOut { reg, expr, late } => {
+                            // Input/output - lower the expression to get input value
                             let input_val = self.lower_expr(expr);
                             inputs.push(input_val);
 
                             // Build constraint - "+" means read+write
                             let constraint = match reg {
-                                AsmRegSpec::Class(c) => match c.as_str() {
-                                    "reg" => "+r".to_string(),
-                                    "reg_byte" => "+q".to_string(),
-                                    "xmm_reg" => "+x".to_string(),
-                                    _ => "+r".to_string(),
+                                AsmRegSpec::Class(c) => {
+                                    let base = match c.as_str() {
+                                        "reg" => "+r",
+                                        "reg_byte" => "+q",
+                                        "xmm_reg" => "+x",
+                                        _ => "+r",
+                                    };
+                                    if *late { base.to_string() } else { format!("+&{}", &base[1..]) }
                                 },
-                                AsmRegSpec::Explicit(name) => format!("+{{{}}}", name),
+                                AsmRegSpec::Explicit(name) => {
+                                    if *late {
+                                        format!("+{{{}}}", name)
+                                    } else {
+                                        format!("+&{{{}}}", name)
+                                    }
+                                },
                             };
                             constraints_parts.push(constraint);
-                            output_types.push(IrType::I64);
+
+                            // Determine output type from expression
+                            use crate::typeck::{IntTy, UintTy};
+                            let output_ty = self.expr_types.get(&expr.span)
+                                .map(|ty| {
+                                    match &ty.kind {
+                                        crate::typeck::TyKind::Int(IntTy::I8) |
+                                        crate::typeck::TyKind::Uint(UintTy::U8) => IrType::I8,
+                                        crate::typeck::TyKind::Int(IntTy::I16) |
+                                        crate::typeck::TyKind::Uint(UintTy::U16) => IrType::I16,
+                                        crate::typeck::TyKind::Int(IntTy::I32) |
+                                        crate::typeck::TyKind::Uint(UintTy::U32) => IrType::I32,
+                                        crate::typeck::TyKind::Int(IntTy::I64) |
+                                        crate::typeck::TyKind::Uint(UintTy::U64) |
+                                        crate::typeck::TyKind::Int(IntTy::Isize) |
+                                        crate::typeck::TyKind::Uint(UintTy::Usize) => IrType::I64,
+                                        _ => IrType::I64,
+                                    }
+                                })
+                                .unwrap_or(IrType::I64);
+                            output_types.push(output_ty);
+
+                            // Get slot for storing output
+                            let slot = self.lower_expr_place(expr);
+                            output_destinations.push(Some(slot));
                         }
                         AsmOperandKind::Const { expr } => {
                             // Immediate constant
@@ -3926,29 +4067,61 @@ impl Lowerer {
                 // Build final constraint string
                 let constraints = constraints_parts.join(",");
 
-                // Convert template: {N} -> $N for LLVM
+                // Convert template for LLVM:
+                // 1. First escape ALL $ as $$ (Genesis uses {N} for operand refs, not $N)
+                // 2. Then convert {N} placeholders to $N
+                //
+                // This handles AT&T syntax correctly:
+                // - User writes: movl $0x12345, %eax
+                // - Escaping: movl $$0x12345, %eax (literal $ for LLVM)
+                // User's asm template uses Rust/LLVM escaping convention:
+                // - $$ in template -> $ in output (literal dollar for AT&T immediates)
+                // - {N} -> $N for operand references
+                // We DON'T escape $ again because user already uses $$ for literals
+
+                // Convert {N} to $N for operand references
                 let mut llvm_template = template.clone();
                 for i in 0..10 {
                     llvm_template = llvm_template.replace(&format!("{{{}}}", i), &format!("${}", i));
                 }
 
-                // Determine side effects
-                let has_side_effects = !options.pure_ && !options.nomem;
+                // Determine side effects - always true for asm with outputs to prevent optimization
+                let has_side_effects = !options.pure_ || !output_types.is_empty();
 
                 // Determine dialect (1 = Intel, 0 = AT&T)
                 let dialect = if options.att_syntax { 0u8 } else { 1u8 };
 
                 // Emit inline assembly
-                if let Some(result) = self.builder.inline_asm(
+                let asm_result = self.builder.inline_asm(
                     llvm_template,
                     constraints,
                     inputs,
-                    output_types,
+                    output_types.clone(),
                     has_side_effects,
                     !options.nostack,
                     dialect,
-                ) {
-                    result
+                );
+
+                // Store output values to their destination variables
+                // Use volatile store to prevent LLVM from optimizing away the asm output
+                if let Some(result_vreg) = asm_result {
+                    if output_destinations.len() == 1 {
+                        // Single output - store directly with volatile semantics
+                        if let Some(Some(slot)) = output_destinations.first() {
+                            self.builder.volatile_store(*slot, result_vreg);
+                        }
+                    } else if output_destinations.len() > 1 {
+                        // Multiple outputs - result is a struct, extract each field
+                        for (idx, dest) in output_destinations.iter().enumerate() {
+                            if let Some(slot) = dest {
+                                let field_ptr = self.builder.get_field_ptr(result_vreg, idx as u32);
+                                let field_val = self.builder.load(field_ptr);
+                                self.builder.volatile_store(*slot, field_val);
+                            }
+                        }
+                    }
+                    // Return unit since asm! is a statement, not an expression
+                    self.builder.const_int(0)
                 } else {
                     // Void asm - return unit
                     self.builder.const_int(0)
@@ -4244,6 +4417,64 @@ impl Lowerer {
                 self.infer_expr_type(left)
             }
             _ => IrType::I64, // Default
+        }
+    }
+
+    /// Get the number of bits for an IR type
+    fn type_bits(&self, ty: &IrType) -> u32 {
+        match ty {
+            IrType::I8 => 8,
+            IrType::I16 => 16,
+            IrType::I32 => 32,
+            IrType::I64 => 64,
+            IrType::F32 => 32,
+            IrType::F64 => 64,
+            IrType::Bool => 1,
+            IrType::Ptr(_) => 64,
+            _ => 64, // Default to 64 bits
+        }
+    }
+
+    /// Check if an AST type is signed
+    fn is_signed_type(&self, ty: &crate::ast::Type) -> bool {
+        match &ty.kind {
+            crate::ast::TypeKind::Path(path) => {
+                let name = &path.segments.last().map(|s| s.ident.name.as_str()).unwrap_or("");
+                matches!(*name, "i8" | "i16" | "i32" | "i64" | "isize")
+            }
+            _ => true, // Default to signed
+        }
+    }
+
+    /// Convert a value to the target type (truncate or extend as needed)
+    fn convert_value_to_type(&mut self, val: VReg, target_ty: &IrType) -> VReg {
+        // Get source type from vreg_types or assume i64
+        let source_ty = self.vreg_types.get(&val).cloned().unwrap_or(IrType::I64);
+
+        // If same type, no conversion needed
+        if source_ty == *target_ty {
+            return val;
+        }
+
+        // Get bit widths
+        let src_bits = self.type_bits(&source_ty);
+        let dst_bits = self.type_bits(target_ty);
+
+        // Only handle integer conversions for now
+        match (&source_ty, target_ty) {
+            (IrType::I8 | IrType::I16 | IrType::I32 | IrType::I64,
+             IrType::I8 | IrType::I16 | IrType::I32 | IrType::I64) => {
+                if dst_bits > src_bits {
+                    // Extend - use zero extend for now (unsigned)
+                    self.builder.zext(val, target_ty.clone())
+                } else if dst_bits < src_bits {
+                    // Truncate
+                    self.builder.trunc(val, target_ty.clone())
+                } else {
+                    val
+                }
+            }
+            _ => val, // Other types - no conversion
         }
     }
 

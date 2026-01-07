@@ -4,6 +4,27 @@ All notable changes to Genesis Lang.
 
 ---
 
+## [0.1.2] - 2026-01-07
+
+Bug fixes for kernel development compiler issues.
+
+### Bug Fixes
+
+- **Inline ASM outputs**: Fixed output constraints being ignored (`out("eax")`, `lateout("eax")`)
+- **ASM u64 outputs**: Fixed u64/u32 outputs always returning zero
+- **ASM $ escaping**: Fixed AT&T immediate syntax (`$$0x12` now works correctly)
+- **Type casting**: Fixed integer-to-pointer and smaller type conversions
+- **Value storage**: Fixed storing values to smaller type slots (i32, u32, etc.)
+
+### Tests
+
+- Added `tests/codegen/asm_output.gl` - ASM output constraints test
+- Added `tests/codegen/asm_dollar_escape.gl` - ASM $ escaping test
+- Added `tests/codegen/int_ptr_cast.gl` - Integer to pointer casting test
+- Added `tests/codegen/type_conversion.gl` - Type conversion test
+
+---
+
 ## [0.1.1] - 2026-01-05
 
 Second release with major new features for kernel and embedded development.

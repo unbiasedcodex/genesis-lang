@@ -1,0 +1,15 @@
+// Test: Inline ASM output constraints
+// Bug 1 & 2: ASM outputs were being ignored, u64 outputs always zero
+
+fn main() -> i64 {
+    let mut result: u32 = 0;
+    unsafe {
+        asm!(
+            "movl $$42, %eax",
+            lateout("eax") result,
+            options(att_syntax)
+        );
+    }
+    // Should return 42, not 0
+    result as i64
+}

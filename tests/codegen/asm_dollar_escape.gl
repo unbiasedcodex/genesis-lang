@@ -1,0 +1,16 @@
+// Test: ASM dollar sign escaping
+// Bug 4: $ symbol was incorrectly double-escaped ($$ -> $$$$)
+
+fn main() -> i64 {
+    let mut val: u32 = 0;
+    unsafe {
+        // $$ should produce a literal $ in AT&T syntax for immediates
+        asm!(
+            "movl $$100, %eax",
+            lateout("eax") val,
+            options(att_syntax)
+        );
+    }
+    // Should return 100, not cause linker error
+    val as i64
+}

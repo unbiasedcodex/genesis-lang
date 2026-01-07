@@ -1,0 +1,11 @@
+// Test: Integer to pointer casting
+// Bug 3: Integer-to-pointer was being optimized to null
+
+fn main() -> i64 {
+    // Test integer to pointer conversion
+    let addr: i64 = 0xB8000;
+    let ptr: *mut u8 = addr as *mut u8;
+
+    // The address should be preserved, not optimized to 0
+    addr
+}

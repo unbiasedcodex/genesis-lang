@@ -180,7 +180,6 @@ Issues to be aware of in freestanding mode:
 |------------|------------|
 | Bitwise operators (`\|`, `<<`, `>>`) not as infix | Use `\|=`, `<<=`, `>>=` or multiplication |
 | No pointer arithmetic | Use integer math then cast to pointer |
-| No pointer-to-integer cast | Calculate with integers first |
 | No static mut | Use local variables in _start |
 | No string literals in freestanding | Use ASCII codes directly |
 

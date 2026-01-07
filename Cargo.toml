@@ -1,6 +1,6 @@
 [package]
 name = "genesis-lang"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 authors = ["Genesis OS Team"]
 description = "The Genesis Programming Language Compiler"
