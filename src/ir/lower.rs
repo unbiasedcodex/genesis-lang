@@ -3324,10 +3324,22 @@ impl Lowerer {
 
             ExprKind::Assign { target, value } => {
                 let val = self.lower_expr(value);
-                if let ExprKind::Path(path) = &target.kind {
-                    let name = &path.segments[0].ident.name;
-                    if let Some(&slot) = self.locals.get(name) {
-                        self.builder.store(slot, val);
+                match &target.kind {
+                    ExprKind::Path(path) => {
+                        // Simple variable assignment: x = value
+                        let name = &path.segments[0].ident.name;
+                        if let Some(&slot) = self.locals.get(name) {
+                            self.builder.store(slot, val);
+                        }
+                    }
+                    ExprKind::Field { .. } | ExprKind::Index { .. } => {
+                        // Compound lvalue: p.x = value or arr[i] = value
+                        // Use lower_expr_place to get the target pointer
+                        let target_ptr = self.lower_expr_place(target);
+                        self.builder.store(target_ptr, val);
+                    }
+                    _ => {
+                        // Unsupported assignment target
                     }
                 }
                 self.builder.const_int(0) // Unit
