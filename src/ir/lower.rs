@@ -3454,6 +3454,16 @@ impl Lowerer {
             ExprKind::MethodCall { receiver, method, args } => {
                 // Check if receiver is a trait object (dyn Trait)
                 let receiver_ty = self.expr_types.get(&receiver.span).cloned();
+
+                // Handle array.len() intrinsic - return compile-time known size
+                if method.name == "len" && args.is_empty() {
+                    if let Some(ref ty) = receiver_ty {
+                        if let crate::typeck::TyKind::Array { size, .. } = &ty.kind {
+                            return self.builder.const_int(*size as i64);
+                        }
+                    }
+                }
+
                 let is_trait_obj = receiver_ty.as_ref()
                     .map(|ty| self.is_trait_object(ty))
                     .unwrap_or(false);

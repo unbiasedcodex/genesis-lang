@@ -1356,6 +1356,13 @@ impl TypeInference {
                     _ => receiver_ty.clone(),
                 };
 
+                // Handle array.len() intrinsic - returns i64 (array length is compile-time known)
+                if let TyKind::Array { .. } = &lookup_ty.kind {
+                    if method.name == "len" && args.is_empty() {
+                        return Ok(Ty::i64());
+                    }
+                }
+
                 // Handle trait object method calls (dyn Trait)
                 let method_sig_opt = if let TyKind::TraitObject { trait_name } = &lookup_ty.kind {
                     // Look up method in the trait
