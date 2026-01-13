@@ -2198,17 +2198,29 @@ impl Lowerer {
                                 .map(|s| s.ident.name.clone())
                                 .collect::<Vec<_>>()
                                 .join("::");
-                            if self.enum_variants.contains_key(&full_path) {
-                                // Unit enum variant returns pointer directly - mark as ptr_local
-                                let var_name = if let PatternKind::Ident { name, .. } = &pattern.kind {
-                                    Some(name.name.clone())
+                            // Check if it's an enum variant and whether it has payload
+                            let variant_info = self.enum_variants.get(&full_path).cloned();
+                            if let Some(ref info) = variant_info {
+                                if info.payload_type.is_none() {
+                                    // Unit enum variant - returns integer discriminant
+                                    // Treat as normal value (allocate and store)
+                                    let ir_ty = IrType::I64;
+                                    let slot = self.builder.alloca(ir_ty);
+                                    let val_vreg = self.lower_expr(val);
+                                    self.builder.store(slot, val_vreg);
+                                    slot
                                 } else {
-                                    None
-                                };
-                                if let Some(name) = var_name {
-                                    self.ptr_locals.insert(name);
+                                    // Enum with payload - returns pointer, mark as ptr_local
+                                    let var_name = if let PatternKind::Ident { name, .. } = &pattern.kind {
+                                        Some(name.name.clone())
+                                    } else {
+                                        None
+                                    };
+                                    if let Some(name) = var_name {
+                                        self.ptr_locals.insert(name);
+                                    }
+                                    self.lower_expr(val)
                                 }
-                                self.lower_expr(val)
                             } else {
                                 // Normal variable - allocate and store
                                 // Use inferred type from type checker if no annotation
@@ -2334,8 +2346,9 @@ impl Lowerer {
                 // Check for unit enum variant
                 if let Some(variant_info) = self.enum_variants.get(&full_path).cloned() {
                     if variant_info.payload_type.is_none() {
-                        // Unit variant - just return discriminant
-                        return self.lower_enum_variant_constructor(&full_path, &variant_info, &[]);
+                        // Unit variant - just return discriminant as integer
+                        // No heap allocation needed for simple unit enums
+                        return self.builder.const_int(variant_info.discriminant as i64);
                     }
                 }
 
