@@ -258,11 +258,14 @@ impl Lowerer {
             TypeKind::Reference { inner, .. } => {
                 IrType::Ptr(Box::new(self.ast_type_to_ir_type_simple(inner)))
             }
-            TypeKind::Array { element, size: _ } => {
-                // For struct field collection, just use pointer for arrays
-                // (actual size will be computed when the struct is lowered)
+            TypeKind::Array { element, size } => {
                 let elem_ty = self.ast_type_to_ir_type_simple(element);
-                IrType::Ptr(Box::new(elem_ty))
+                // Evaluate size expression (must be integer literal)
+                let sz = match &size.kind {
+                    crate::ast::ExprKind::Literal(crate::ast::Literal::Int(n)) => *n as usize,
+                    _ => 0,
+                };
+                IrType::Array(Box::new(elem_ty), sz)
             }
             TypeKind::Tuple(elems) => {
                 let elem_tys: Vec<IrType> = elems.iter()
@@ -298,11 +301,19 @@ impl Lowerer {
 
                         // Store as pointer to struct (matches how struct literals work)
                         let struct_ty = if is_packed {
-                            IrType::StructPacked(field_types)
+                            IrType::StructPacked(field_types.clone())
                         } else {
-                            IrType::Struct(field_types)
+                            IrType::Struct(field_types.clone())
                         };
                         self.struct_types.insert(s.name.name.clone(), IrType::Ptr(Box::new(struct_ty)));
+
+                        // Also populate specialized_structs for field name lookup
+                        let specialized_fields: Vec<(String, IrType)> = s.fields
+                            .iter()
+                            .zip(field_types.iter())
+                            .map(|(f, ty)| (f.name.name.clone(), ty.clone()))
+                            .collect();
+                        self.specialized_structs.insert(s.name.name.clone(), specialized_fields);
                     }
                 }
                 Item::Mod(m) => {
@@ -3431,21 +3442,77 @@ impl Lowerer {
                 self.builder.const_int(0)
             }
 
-            ExprKind::Struct { path: _, fields } => {
-                // Allocate space for the struct on the heap
-                // (heap allocation ensures the struct survives function returns)
-                // Infer field types from the initializer expressions
-                let field_types: Vec<IrType> = fields.iter()
-                    .map(|(_, value)| self.infer_expr_type(value))
-                    .collect();
-                let struct_ty = IrType::Struct(field_types);
+            ExprKind::Struct { path, fields } => {
+                // Get struct name from path
+                let struct_name = path.segments.last()
+                    .map(|s| s.ident.name.clone())
+                    .unwrap_or_default();
+
+                // Try to get struct type from struct_types (registered non-generic structs)
+                // This gives us the correct field types including nested structs
+                let struct_ty = if let Some(ptr_ty) = self.struct_types.get(&struct_name) {
+                    // struct_types stores Ptr(Struct(...)), extract the inner type
+                    if let IrType::Ptr(inner) = ptr_ty {
+                        (**inner).clone()
+                    } else {
+                        // Fallback: infer from field values
+                        let field_types: Vec<IrType> = fields.iter()
+                            .map(|(_, value)| self.infer_expr_type(value))
+                            .collect();
+                        IrType::Struct(field_types)
+                    }
+                } else {
+                    // Fallback: infer from field values (for generic structs, etc.)
+                    let field_types: Vec<IrType> = fields.iter()
+                        .map(|(_, value)| self.infer_expr_type(value))
+                        .collect();
+                    IrType::Struct(field_types)
+                };
+
+                // Get the field types for checking nested structs
+                let field_types = if let IrType::Struct(types) = &struct_ty {
+                    types.clone()
+                } else if let IrType::StructPacked(types) = &struct_ty {
+                    types.clone()
+                } else {
+                    Vec::new()
+                };
+
                 let struct_ptr = self.builder.malloc(struct_ty);
 
                 // Initialize each field
-                for (i, (_name, value)) in fields.iter().enumerate() {
-                    let val = self.lower_expr(value);
+                for (i, (field_name, value)) in fields.iter().enumerate() {
                     let field_ptr = self.builder.get_field_ptr(struct_ptr, i as u32);
-                    self.builder.store(field_ptr, val);
+
+                    // Check if this field is a nested struct
+                    let field_ty = field_types.get(i);
+                    let is_nested_struct = matches!(field_ty, Some(IrType::Struct(_)) | Some(IrType::StructPacked(_)));
+
+                    if is_nested_struct {
+                        // For nested struct fields, we need to copy the struct data
+                        // The value is a variable holding a pointer to a struct
+                        // Copy each field of the nested struct
+                        let src_ptr = self.lower_expr(value);
+                        let src_typed_ptr = self.builder.inttoptr(src_ptr, IrType::Ptr(Box::new(field_ty.unwrap().clone())));
+
+                        // Get number of fields in nested struct
+                        let nested_field_count = match field_ty.unwrap() {
+                            IrType::Struct(fields) | IrType::StructPacked(fields) => fields.len(),
+                            _ => 0,
+                        };
+
+                        // Copy each field
+                        for j in 0..nested_field_count {
+                            let src_field_ptr = self.builder.get_field_ptr(src_typed_ptr, j as u32);
+                            let dst_field_ptr = self.builder.get_field_ptr(field_ptr, j as u32);
+                            let field_val = self.builder.load(src_field_ptr);
+                            self.builder.store(dst_field_ptr, field_val);
+                        }
+                    } else {
+                        // Regular field: just store the value
+                        let val = self.lower_expr(value);
+                        self.builder.store(field_ptr, val);
+                    }
                 }
 
                 struct_ptr
@@ -3521,7 +3588,8 @@ impl Lowerer {
 
             ExprKind::Field { object, field } => {
                 // Check if object is a heap-allocated user struct or a reference to one
-                let (is_heap_struct, is_ref_to_heap_struct) = self.expr_types.get(&object.span).map_or((false, false), |ty| {
+                // Also capture struct name for proper type tracking
+                let (is_heap_struct, is_ref_to_heap_struct, struct_name) = self.expr_types.get(&object.span).map_or((false, false, None), |ty| {
                     match &ty.kind {
                         crate::typeck::TyKind::Named { name, .. } => {
                             // Resolve "Self" to the current impl type
@@ -3534,7 +3602,7 @@ impl Lowerer {
                             let is_heap = self.struct_types.contains_key(resolved_name) ||
                                 resolved_name == "Option" || resolved_name == "Result" || resolved_name == "String" ||
                                 resolved_name == "Vec" || resolved_name == "HashMap" || resolved_name == "HashSet";
-                            (is_heap, false)
+                            (is_heap, false, Some(resolved_name.clone()))
                         }
                         crate::typeck::TyKind::Ref { inner, .. } => {
                             // Check if inner type is a heap-allocated struct (like &self where Self = Dog)
@@ -3547,14 +3615,19 @@ impl Lowerer {
                                 let is_heap = self.struct_types.contains_key(resolved_name) ||
                                     resolved_name == "Option" || resolved_name == "Result" || resolved_name == "String" ||
                                     resolved_name == "Vec" || resolved_name == "HashMap" || resolved_name == "HashSet";
-                                (false, is_heap)
+                                (false, is_heap, Some(resolved_name.clone()))
                             } else {
-                                (false, false)
+                                (false, false, None)
                             }
                         }
-                        _ => (false, false)
+                        _ => (false, false, None)
                     }
                 });
+
+                // Check if object is a nested field access (struct field of another struct)
+                // In this case, lower_expr_place returns a pointer directly to the embedded struct,
+                // not a slot containing a pointer value.
+                let is_nested_field = matches!(&object.kind, ExprKind::Field { .. });
 
                 let struct_ptr = if is_ref_to_heap_struct {
                     // For references to heap-allocated structs (like &self where self: Dog)
@@ -3563,12 +3636,21 @@ impl Lowerer {
                     let slot = self.lower_expr_place(object);
                     let ref_val = self.builder.load(slot);  // This is the &Dog value (ptr to ptr)
                     self.builder.load(ref_val)  // Load the Dog pointer
+                } else if is_nested_field && is_heap_struct {
+                    // For nested struct fields (e.g., rect.size where size is Point),
+                    // lower_expr_place already returns a pointer to the embedded struct.
+                    // No need to load - the field pointer IS the struct pointer.
+                    self.lower_expr_place(object)
                 } else if is_heap_struct {
-                    // For heap-allocated structs, load the pointer from the slot
-                    // and convert i64 to pointer (opaque pointer handling)
+                    // For top-level heap-allocated structs, load the pointer from the slot
+                    // and convert i64 to pointer using actual struct type for proper GEP offsets
                     let slot = self.lower_expr_place(object);
                     let ptr_val = self.builder.load(slot);
-                    self.builder.inttoptr(ptr_val, IrType::Ptr(Box::new(IrType::I64)))
+                    // Use actual struct type if available for correct field offsets
+                    let ptr_ty = struct_name.as_ref()
+                        .and_then(|name| self.struct_types.get(name).cloned())
+                        .unwrap_or_else(|| IrType::Ptr(Box::new(IrType::I64)));
+                    self.builder.inttoptr(ptr_val, ptr_ty)
                 } else {
                     // For stack-allocated structs, use the slot directly
                     self.lower_expr_place(object)
@@ -4237,7 +4319,8 @@ impl Lowerer {
             }
             ExprKind::Field { object, field } => {
                 // Check if object is a heap-allocated user struct or a reference to one
-                let (is_heap_struct, is_ref_to_heap_struct) = self.expr_types.get(&object.span).map_or((false, false), |ty| {
+                // Also capture struct name for proper type tracking
+                let (is_heap_struct, is_ref_to_heap_struct, struct_name) = self.expr_types.get(&object.span).map_or((false, false, None), |ty| {
                     match &ty.kind {
                         crate::typeck::TyKind::Named { name, .. } => {
                             // Resolve "Self" to the current impl type
@@ -4250,7 +4333,7 @@ impl Lowerer {
                             let is_heap = self.struct_types.contains_key(resolved_name) ||
                                 resolved_name == "Option" || resolved_name == "Result" || resolved_name == "String" ||
                                 resolved_name == "Vec" || resolved_name == "HashMap" || resolved_name == "HashSet";
-                            (is_heap, false)
+                            (is_heap, false, Some(resolved_name.clone()))
                         }
                         crate::typeck::TyKind::Ref { inner, .. } => {
                             // Check if inner type is a heap-allocated struct (like &self where Self = Dog)
@@ -4263,14 +4346,17 @@ impl Lowerer {
                                 let is_heap = self.struct_types.contains_key(resolved_name) ||
                                     resolved_name == "Option" || resolved_name == "Result" || resolved_name == "String" ||
                                     resolved_name == "Vec" || resolved_name == "HashMap" || resolved_name == "HashSet";
-                                (false, is_heap)
+                                (false, is_heap, Some(resolved_name.clone()))
                             } else {
-                                (false, false)
+                                (false, false, None)
                             }
                         }
-                        _ => (false, false)
+                        _ => (false, false, None)
                     }
                 });
+
+                // Check if object is a nested field access (struct field of another struct)
+                let is_nested_field = matches!(&object.kind, ExprKind::Field { .. });
 
                 let struct_ptr = if is_ref_to_heap_struct {
                     // For references to heap-allocated structs (like &self where self: Dog)
@@ -4279,12 +4365,19 @@ impl Lowerer {
                     let slot = self.lower_expr_place(object);
                     let ref_val = self.builder.load(slot);  // This is the &Dog value (ptr to ptr)
                     self.builder.load(ref_val)  // Load the Dog pointer
+                } else if is_nested_field && is_heap_struct {
+                    // For nested struct fields, the field pointer IS the struct pointer
+                    self.lower_expr_place(object)
                 } else if is_heap_struct {
-                    // For heap-allocated structs, load the pointer from the slot
-                    // and convert i64 to pointer (opaque pointer handling)
+                    // For top-level heap-allocated structs, load the pointer from the slot
+                    // and convert i64 to pointer using actual struct type for proper GEP offsets
                     let slot = self.lower_expr_place(object);
                     let ptr_val = self.builder.load(slot);
-                    self.builder.inttoptr(ptr_val, IrType::Ptr(Box::new(IrType::I64)))
+                    // Use actual struct type if available for correct field offsets
+                    let ptr_ty = struct_name.as_ref()
+                        .and_then(|name| self.struct_types.get(name).cloned())
+                        .unwrap_or_else(|| IrType::Ptr(Box::new(IrType::I64)));
+                    self.builder.inttoptr(ptr_val, ptr_ty)
                 } else {
                     // For stack-allocated structs, use the slot directly
                     self.lower_expr_place(object)
@@ -4510,6 +4603,24 @@ impl Lowerer {
             IrType::Bool => 1,
             IrType::Ptr(_) => 64,
             _ => 64, // Default to 64 bits
+        }
+    }
+
+    /// Get the size in bytes for an IR type
+    fn type_size(&self, ty: &IrType) -> usize {
+        match ty {
+            IrType::I8 | IrType::Bool => 1,
+            IrType::I16 => 2,
+            IrType::I32 | IrType::F32 => 4,
+            IrType::I64 | IrType::F64 | IrType::Ptr(_) => 8,
+            IrType::Struct(fields) | IrType::StructPacked(fields) => {
+                // Sum of all field sizes (simplified, doesn't account for alignment)
+                fields.iter().map(|f| self.type_size(f)).sum()
+            }
+            IrType::Array(elem, count) => {
+                self.type_size(elem) * count
+            }
+            _ => 8, // Default to 8 bytes
         }
     }
 
