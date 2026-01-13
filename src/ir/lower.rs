@@ -2201,8 +2201,15 @@ impl Lowerer {
                             // Check if it's an enum variant and whether it has payload
                             let variant_info = self.enum_variants.get(&full_path).cloned();
                             if let Some(ref info) = variant_info {
-                                if info.payload_type.is_none() {
-                                    // Unit enum variant - returns integer discriminant
+                                // Check if this enum has OTHER variants with payloads
+                                let enum_prefix = full_path.split("::").next().unwrap_or("");
+                                let enum_has_payload_variants = self.enum_variants.iter()
+                                    .any(|(name, vi)| {
+                                        name.starts_with(enum_prefix) && name.contains("::") && vi.payload_type.is_some()
+                                    });
+
+                                if info.payload_type.is_none() && !enum_has_payload_variants {
+                                    // Pure unit enum variant - returns integer discriminant
                                     // Treat as normal value (allocate and store)
                                     let ir_ty = IrType::I64;
                                     let slot = self.builder.alloca(ir_ty);
@@ -2210,7 +2217,8 @@ impl Lowerer {
                                     self.builder.store(slot, val_vreg);
                                     slot
                                 } else {
-                                    // Enum with payload - returns pointer, mark as ptr_local
+                                    // Enum with payload OR variant of data enum (like Option::None)
+                                    // Returns pointer, mark as ptr_local
                                     let var_name = if let PatternKind::Ident { name, .. } = &pattern.kind {
                                         Some(name.name.clone())
                                     } else {
@@ -2346,9 +2354,22 @@ impl Lowerer {
                 // Check for unit enum variant
                 if let Some(variant_info) = self.enum_variants.get(&full_path).cloned() {
                     if variant_info.payload_type.is_none() {
-                        // Unit variant - just return discriminant as integer
-                        // No heap allocation needed for simple unit enums
-                        return self.builder.const_int(variant_info.discriminant as i64);
+                        // Check if this enum has OTHER variants with payloads
+                        // (e.g., Option::None should still allocate because Option::Some has payload)
+                        let enum_prefix = full_path.split("::").next().unwrap_or("");
+                        let enum_has_payload_variants = self.enum_variants.iter()
+                            .any(|(name, info)| {
+                                name.starts_with(enum_prefix) && name.contains("::") && info.payload_type.is_some()
+                            });
+
+                        if enum_has_payload_variants {
+                            // This is a variant of a data enum (like Option::None)
+                            // Must allocate struct for type consistency with payload variants
+                            return self.lower_enum_variant_constructor(&full_path, &variant_info, &[]);
+                        } else {
+                            // Pure unit enum - just return discriminant as integer
+                            return self.builder.const_int(variant_info.discriminant as i64);
+                        }
                     }
                 }
 
@@ -13245,8 +13266,23 @@ impl Lowerer {
             false
         });
 
+        // Check if scrutinee is a ptr_local (enum with payload stored directly as pointer)
+        let is_ptr_local = if let ExprKind::Path(path) = &scrutinee.kind {
+            let name = &path.segments[0].ident.name;
+            self.ptr_locals.contains(name)
+        } else {
+            false
+        };
+
         let scrutinee_slot = self.lower_expr_place(scrutinee);
-        let scrutinee_val = self.builder.load(scrutinee_slot);
+
+        // For ptr_locals (data enums), the slot IS the pointer, don't load
+        // For regular locals (unit enums), load the value from the slot
+        let scrutinee_val = if is_ptr_local {
+            scrutinee_slot  // Already a pointer to the enum struct
+        } else {
+            self.builder.load(scrutinee_slot)
+        };
 
         // Get discriminant based on enum type
         let discrim = if has_payload {
