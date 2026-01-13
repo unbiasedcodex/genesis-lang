@@ -2064,8 +2064,8 @@ impl Lowerer {
                             self.builder.store(slot, ptr);
                             slot
                         }
-                        ExprKind::Array(_) => {
-                            // Array literal - use its result directly (stack allocated)
+                        ExprKind::Array(_) | ExprKind::ArrayRepeat { .. } => {
+                            // Array literal/repeat - use its result directly (stack allocated)
                             self.lower_expr(val)
                         }
                         ExprKind::Closure { .. } => {
@@ -3579,6 +3579,32 @@ impl Lowerer {
                 // Initialize each element
                 for (i, elem) in elements.iter().enumerate() {
                     let val = self.lower_expr(elem);
+                    let idx = self.builder.const_int(i as i64);
+                    let elem_ptr = self.builder.get_element_ptr(arr_ptr, idx);
+                    self.builder.store(elem_ptr, val);
+                }
+
+                arr_ptr
+            }
+
+            ExprKind::ArrayRepeat { value, count } => {
+                // Get array size from count expression (must be integer literal)
+                let size = if let ExprKind::Literal(ast::Literal::Int(n)) = &count.kind {
+                    *n as usize
+                } else {
+                    // Fallback: try to evaluate, or use 0
+                    0
+                };
+
+                // Allocate array
+                let arr_ty = IrType::Array(Box::new(IrType::I64), size);
+                let arr_ptr = self.builder.alloca(arr_ty);
+
+                // Get the value to repeat
+                let val = self.lower_expr(value);
+
+                // Initialize each element with the same value
+                for i in 0..size {
                     let idx = self.builder.const_int(i as i64);
                     let elem_ptr = self.builder.get_element_ptr(arr_ptr, idx);
                     self.builder.store(elem_ptr, val);

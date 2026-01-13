@@ -594,6 +594,12 @@ pub enum ExprKind {
     /// Array literal: `[1, 2, 3]`
     Array(Vec<Expr>),
 
+    /// Array repeat: `[0; 64]` - repeat expression count times
+    ArrayRepeat {
+        value: Box<Expr>,
+        count: Box<Expr>,
+    },
+
     /// Tuple: `(a, b, c)`
     Tuple(Vec<Expr>),
 

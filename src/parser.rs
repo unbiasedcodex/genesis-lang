@@ -2177,17 +2177,38 @@ impl<'src> Parser<'src> {
 
         // Array
         if self.consume(TokenKind::LBracket) {
-            let mut elements = Vec::new();
-            if !self.check(TokenKind::RBracket) {
-                loop {
-                    elements.push(self.parse_expr()?);
-                    if !self.consume(TokenKind::Comma) {
-                        break;
-                    }
-                    if self.check(TokenKind::RBracket) {
-                        break;
-                    }
+            // Check for empty array or parse first element
+            if self.check(TokenKind::RBracket) {
+                self.advance();
+                return Ok(Expr {
+                    kind: ExprKind::Array(Vec::new()),
+                    span: Span::new(start, self.previous.span.end),
+                });
+            }
+
+            // Parse first element
+            let first = self.parse_expr()?;
+
+            // Check for repeat syntax: [expr; count]
+            if self.consume(TokenKind::Semicolon) {
+                let count = self.parse_expr()?;
+                self.expect(TokenKind::RBracket)?;
+                return Ok(Expr {
+                    kind: ExprKind::ArrayRepeat {
+                        value: Box::new(first),
+                        count: Box::new(count),
+                    },
+                    span: Span::new(start, self.previous.span.end),
+                });
+            }
+
+            // Otherwise, parse as regular array literal
+            let mut elements = vec![first];
+            while self.consume(TokenKind::Comma) {
+                if self.check(TokenKind::RBracket) {
+                    break;
                 }
+                elements.push(self.parse_expr()?);
             }
             self.expect(TokenKind::RBracket)?;
             return Ok(Expr {

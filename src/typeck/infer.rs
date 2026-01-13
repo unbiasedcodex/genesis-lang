@@ -1524,6 +1524,20 @@ impl TypeInference {
                 }
             }
 
+            ExprKind::ArrayRepeat { value, count } => {
+                let elem_ty = self.infer_expr(value)?;
+                let count_ty = self.infer_expr(count)?;
+                // Count must be an integer (ideally a constant, but we check type here)
+                self.unify_with_alias_expansion(&count_ty, &Ty::i64(), count.span)?;
+                // For now, try to evaluate count as a literal
+                let size = if let ExprKind::Literal(Literal::Int(n)) = &count.kind {
+                    *n as usize
+                } else {
+                    0 // Unknown size at compile time
+                };
+                Ok(Ty::array(elem_ty, size))
+            }
+
             ExprKind::Tuple(elements) => {
                 let tys: Vec<Ty> = elements.iter().map(|e| self.infer_expr(e)).collect::<Result<_, _>>()?;
                 Ok(Ty::tuple(tys))

@@ -394,6 +394,10 @@ fn visit_expr(expr: &Expr, references: &mut HashMap<Span, String>) {
                 visit_expr(e, references);
             }
         }
+        ExprKind::ArrayRepeat { value, count } => {
+            visit_expr(value, references);
+            visit_expr(count, references);
+        }
         ExprKind::Tuple(elements) => {
             for e in elements {
                 visit_expr(e, references);
