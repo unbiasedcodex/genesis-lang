@@ -1285,9 +1285,10 @@ impl Lowerer {
                         .iter()
                         .map(|p| self.ast_type_to_ty(&p.ty))
                         .collect();
+                    // Arrays are passed by pointer in function calling convention
                     let param_types: Vec<IrType> = param_tys
                         .iter()
-                        .map(|ty| self.ty_to_ir_type(ty))
+                        .map(|ty| self.ty_to_ir_type(ty).as_param_type())
                         .collect();
                     self.fn_signatures.insert(f.name.name.clone(), param_types);
                     self.fn_param_tys.insert(f.name.name.clone(), param_tys);
@@ -1312,9 +1313,10 @@ impl Lowerer {
                                     .iter()
                                     .map(|p| self.ast_type_to_ty(&p.ty))
                                     .collect();
+                                // Arrays are passed by pointer in function calling convention
                                 let param_types: Vec<IrType> = param_tys
                                     .iter()
-                                    .map(|ty| self.ty_to_ir_type(ty))
+                                    .map(|ty| self.ty_to_ir_type(ty).as_param_type())
                                     .collect();
                                 let full_name = format!("{}::{}", prefix, f.name.name);
                                 self.fn_signatures.insert(full_name.clone(), param_types);
@@ -1403,11 +1405,11 @@ impl Lowerer {
         self.local_types.clear();
         self.vreg_types.clear();
 
-        // Convert parameter types
+        // Convert parameter types (arrays are passed by pointer)
         let param_types: Vec<IrType> = f
             .params
             .iter()
-            .map(|p| self.ty_to_ir_type(&self.ast_type_to_ty(&p.ty)))
+            .map(|p| self.ty_to_ir_type(&self.ast_type_to_ty(&p.ty)).as_param_type())
             .collect();
 
         let base_ret_type = f
@@ -1608,10 +1610,17 @@ impl Lowerer {
         // Create stack slots for parameters and bind them
         for (param, vreg) in f.params.iter().zip(param_vregs.iter()) {
             let param_ty = self.ty_to_ir_type(&self.ast_type_to_ty(&param.ty));
-            let slot = self.builder.alloca(param_ty.clone());
-            self.builder.store(slot, *vreg);
-            self.locals.insert(param.name.name.clone(), slot);
-            self.local_types.insert(param.name.name.clone(), param_ty);
+            if param_ty.is_array() {
+                // Array parameters are passed by pointer - use the pointer directly
+                // (the vreg IS the pointer to the array data)
+                self.locals.insert(param.name.name.clone(), *vreg);
+                self.local_types.insert(param.name.name.clone(), param_ty);
+            } else {
+                let slot = self.builder.alloca(param_ty.clone());
+                self.builder.store(slot, *vreg);
+                self.locals.insert(param.name.name.clone(), slot);
+                self.local_types.insert(param.name.name.clone(), param_ty);
+            }
         }
 
         // Lower function body
@@ -1813,11 +1822,11 @@ impl Lowerer {
         // Set current module context for resolving unqualified calls
         self.current_module = Some(prefix.to_string());
 
-        // Convert parameter types
+        // Convert parameter types (arrays are passed by pointer)
         let param_types: Vec<IrType> = f
             .params
             .iter()
-            .map(|p| self.ty_to_ir_type(&self.ast_type_to_ty(&p.ty)))
+            .map(|p| self.ty_to_ir_type(&self.ast_type_to_ty(&p.ty)).as_param_type())
             .collect();
 
         let base_ret_type = f
@@ -1984,10 +1993,17 @@ impl Lowerer {
         // Create stack slots for parameters and bind them
         for (param, vreg) in f.params.iter().zip(param_vregs.iter()) {
             let param_ty = self.ty_to_ir_type(&self.ast_type_to_ty(&param.ty));
-            let slot = self.builder.alloca(param_ty.clone());
-            self.builder.store(slot, *vreg);
-            self.locals.insert(param.name.name.clone(), slot);
-            self.local_types.insert(param.name.name.clone(), param_ty);
+            if param_ty.is_array() {
+                // Array parameters are passed by pointer - use the pointer directly
+                // (the vreg IS the pointer to the array data)
+                self.locals.insert(param.name.name.clone(), *vreg);
+                self.local_types.insert(param.name.name.clone(), param_ty);
+            } else {
+                let slot = self.builder.alloca(param_ty.clone());
+                self.builder.store(slot, *vreg);
+                self.locals.insert(param.name.name.clone(), slot);
+                self.local_types.insert(param.name.name.clone(), param_ty);
+            }
         }
 
         // Lower function body
@@ -3262,16 +3278,30 @@ impl Lowerer {
                 };
 
                 // Lower arguments and get their source types from expr_types
+                // For array parameters, pass by pointer (don't load the array value)
+                let param_tys_opt = self.fn_param_tys.get(&final_name).cloned();
                 let arg_vregs_and_tys: Vec<(VReg, Option<Ty>)> = args.iter()
-                    .map(|a| {
-                        let vreg = self.lower_expr(a);
+                    .enumerate()
+                    .map(|(i, a)| {
+                        // Check if this parameter is an array type - if so, pass by pointer
+                        let is_array_param = param_tys_opt.as_ref()
+                            .and_then(|tys| tys.get(i))
+                            .map(|ty| matches!(&ty.kind, TyKind::Array { .. }))
+                            .unwrap_or(false);
+
+                        let vreg = if is_array_param {
+                            // For array parameters, get the pointer (don't load)
+                            self.lower_expr_place(a)
+                        } else {
+                            self.lower_expr(a)
+                        };
                         let ty = self.expr_types.get(&a.span).cloned();
                         (vreg, ty)
                     })
                     .collect();
 
                 // Coerce arguments to match function signature (including trait object coercion)
-                let arg_vregs = if let Some(param_tys) = self.fn_param_tys.get(&final_name).cloned() {
+                let arg_vregs = if let Some(param_tys) = param_tys_opt {
                     arg_vregs_and_tys.into_iter().zip(param_tys.iter())
                         .map(|((arg, arg_src_ty), param_ty)| {
                             // Check for trait object coercion first
@@ -12654,9 +12684,13 @@ impl Lowerer {
             TypeKind::Reference { mutable, inner } => {
                 Ty::reference(self.ast_type_to_ty(inner), *mutable)
             }
-            TypeKind::Array { element, size: _ } => {
-                // TODO: evaluate size expression
-                Ty::array(self.ast_type_to_ty(element), 0)
+            TypeKind::Array { element, size } => {
+                // Evaluate size expression (must be integer literal for now)
+                let sz = match &size.kind {
+                    ast::ExprKind::Literal(ast::Literal::Int(n)) => *n as usize,
+                    _ => 0,
+                };
+                Ty::array(self.ast_type_to_ty(element), sz)
             }
             TypeKind::Tuple(elems) => {
                 Ty::tuple(elems.iter().map(|e| self.ast_type_to_ty(e)).collect())

@@ -112,6 +112,20 @@ impl IrType {
     pub fn is_float(&self) -> bool {
         matches!(self, IrType::F32 | IrType::F64)
     }
+
+    /// Is this type an array?
+    pub fn is_array(&self) -> bool {
+        matches!(self, IrType::Array(..))
+    }
+
+    /// Convert type to function parameter type.
+    /// Arrays are passed by pointer in function calling convention.
+    pub fn as_param_type(self) -> IrType {
+        match self {
+            IrType::Array(elem, size) => IrType::Ptr(Box::new(IrType::Array(elem, size))),
+            other => other,
+        }
+    }
 }
 
 impl fmt::Display for IrType {
