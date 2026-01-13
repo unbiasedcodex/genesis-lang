@@ -13226,18 +13226,43 @@ impl Lowerer {
 
     /// Lower a match expression
     fn lower_match(&mut self, scrutinee: &Expr, arms: &[ast::MatchArm]) -> VReg {
-        // Lower the scrutinee - get the enum pointer
-        // For heap-allocated enums (Option, Result, etc.), the variable's slot
-        // contains a pointer to the enum struct. We need to load that pointer first.
-        let scrutinee_slot = self.lower_expr_place(scrutinee);
-        let scrutinee_ptr = self.builder.load(scrutinee_slot);
+        // Check if this is a unit enum (no payloads) or a data enum (has payloads)
+        // Unit enums are stored as integers, data enums as heap-allocated structs
+        let has_payload = arms.iter().any(|arm| {
+            if let PatternKind::Enum { fields, path, .. } = &arm.pattern.kind {
+                if !fields.is_empty() {
+                    return true;
+                }
+                // Also check if the variant itself has a payload type
+                let variant_name = path.segments.iter()
+                    .map(|s| s.ident.name.clone())
+                    .collect::<Vec<_>>()
+                    .join("::");
+                if let Some(info) = self.enum_variants.get(&variant_name) {
+                    return info.payload_type.is_some();
+                }
+            }
+            false
+        });
 
-        // Load the discriminant (first field of the enum struct)
-        // The discriminant is stored as i32, but load may return i64
-        // Truncate to i32 for correct comparison
-        let discrim_ptr = self.builder.get_field_ptr(scrutinee_ptr, 0);
-        let discrim_raw = self.builder.load(discrim_ptr);
-        let discrim = self.builder.trunc(discrim_raw, IrType::I32);
+        let scrutinee_slot = self.lower_expr_place(scrutinee);
+        let scrutinee_val = self.builder.load(scrutinee_slot);
+
+        // Get discriminant based on enum type
+        let discrim = if has_payload {
+            // Data enum: scrutinee_val is a pointer to enum struct
+            // Load discriminant from first field
+            let discrim_ptr = self.builder.get_field_ptr(scrutinee_val, 0);
+            let discrim_raw = self.builder.load(discrim_ptr);
+            self.builder.trunc(discrim_raw, IrType::I32)
+        } else {
+            // Unit enum: scrutinee_val IS the discriminant (as i64)
+            // Truncate to i32 for comparison
+            self.builder.trunc(scrutinee_val, IrType::I32)
+        };
+
+        // For payload extraction, we need the pointer (only valid for data enums)
+        let scrutinee_ptr = scrutinee_val;
 
         // Create blocks for each arm's condition check, body, and the merge block
         let check_blocks: Vec<_> = arms.iter().map(|_| self.builder.create_block()).collect();
