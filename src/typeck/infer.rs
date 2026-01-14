@@ -2240,7 +2240,21 @@ impl TypeInference {
         let result = if let Some(expr) = &block.expr {
             self.infer_expr(expr)?
         } else {
-            Ty::unit()
+            // Check if the last statement is a diverging expression (return, break, continue)
+            // If so, the block type is never (!) which unifies with any type
+            let diverges = block.stmts.last().map_or(false, |stmt| {
+                if let StmtKind::Expr(expr) = &stmt.kind {
+                    matches!(expr.kind, ExprKind::Return { .. })
+                } else {
+                    false
+                }
+            });
+
+            if diverges {
+                Ty::never()
+            } else {
+                Ty::unit()
+            }
         };
 
         self.ctx.leave_scope();
@@ -2271,7 +2285,24 @@ impl TypeInference {
                 let _ = self.infer_expr(expr)?;
                 Ok(())
             }
-            StmtKind::Item(_) => Ok(()),
+            StmtKind::Item(item) => {
+                // Handle const declarations inside blocks
+                if let crate::ast::Item::Const(const_def) = item {
+                    // Infer type from value expression
+                    let val_ty = self.infer_expr(&const_def.value)?;
+                    // If explicit type provided, unify with inferred type
+                    let ty = if let Some(ref declared_ty) = const_def.ty {
+                        let decl = self.ast_type_to_ty(declared_ty);
+                        self.unify_with_alias_expansion(&decl, &val_ty, const_def.span)?;
+                        decl
+                    } else {
+                        val_ty
+                    };
+                    // Add const to scope (treat as immutable variable)
+                    self.ctx.define_var(&const_def.name.name, ty, false);
+                }
+                Ok(())
+            }
         }
     }
 

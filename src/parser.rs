@@ -2710,6 +2710,13 @@ impl<'src> Parser<'src> {
         while !self.check(TokenKind::RBrace) && !self.is_at_end() {
             if self.check(TokenKind::Let) {
                 stmts.push(self.parse_let_stmt()?);
+            } else if self.check(TokenKind::Const) {
+                // Support const declarations inside blocks
+                let const_def = self.parse_const(false)?;
+                stmts.push(Stmt {
+                    span: const_def.span,
+                    kind: StmtKind::Item(Item::Const(const_def)),
+                });
             } else {
                 let expr = self.parse_expr()?;
 
