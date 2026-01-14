@@ -13387,9 +13387,10 @@ impl Lowerer {
                     self.builder.br(merge_block);
                 }
                 PatternKind::Literal(lit) => {
-                    // Literal pattern - compare values
+                    // Literal pattern - compare values directly
+                    // For integer scrutinees, scrutinee_val is already the loaded value
+                    // (not a pointer), so we use it directly without reloading
                     let expected = self.lower_literal(lit);
-                    let scrutinee_val = self.builder.load(scrutinee_ptr);
                     let cond = self.builder.icmp(CmpOp::Eq, scrutinee_val, expected);
                     self.builder.cond_br(cond, body_block, next_check);
 
