@@ -40,6 +40,8 @@ pub struct LLVMCodegen<'ctx> {
     current_fn: Option<FunctionValue<'ctx>>,
     /// Map from global name to its content type (for load operations)
     global_types: HashMap<String, BasicTypeEnum<'ctx>>,
+    /// Entry block of current function (for alloca hoisting)
+    entry_block: Option<inkwell::basic_block::BasicBlock<'ctx>>,
 }
 
 impl<'ctx> LLVMCodegen<'ctx> {
@@ -58,6 +60,7 @@ impl<'ctx> LLVMCodegen<'ctx> {
             block_map: HashMap::new(),
             current_fn: None,
             global_types: HashMap::new(),
+            entry_block: None,
         }
     }
 
@@ -230,6 +233,7 @@ impl<'ctx> LLVMCodegen<'ctx> {
         self.vreg_values.clear();
         self.vreg_types.clear();
         self.block_map.clear();
+        self.alloca_regs.clear();
 
         let llvm_fn = self.module.get_function(&func.name).unwrap();
         self.current_fn = Some(llvm_fn);
@@ -240,6 +244,13 @@ impl<'ctx> LLVMCodegen<'ctx> {
             let label = block.label.as_deref().unwrap_or(&default_label);
             let llvm_block = self.context.append_basic_block(llvm_fn, label);
             self.block_map.insert(block.id.0, llvm_block);
+        }
+
+        // Store entry block for alloca hoisting (first block is always entry)
+        if let Some(first_block) = func.blocks.first() {
+            self.entry_block = self.block_map.get(&first_block.id.0).copied();
+        } else {
+            self.entry_block = None;
         }
 
         // Store parameter values
@@ -254,6 +265,7 @@ impl<'ctx> LLVMCodegen<'ctx> {
         }
 
         self.current_fn = None;
+        self.entry_block = None;
     }
 
     /// Compile a basic block
@@ -485,9 +497,58 @@ impl<'ctx> LLVMCodegen<'ctx> {
             }
 
             // Memory
+            // IMPORTANT: Alloca hoisting - all allocas are emitted in the entry block
+            // to prevent stack growth in loops. Without this, loops with local variables
+            // would allocate new stack space on each iteration, causing stack overflow.
             InstrKind::Alloca(ty) => {
                 let llvm_ty = self.convert_type(ty).unwrap_or(self.context.i64_type().into());
-                let alloca = self.builder.build_alloca(llvm_ty, "alloca").unwrap();
+
+                // Hoist alloca to entry block to prevent stack leak in loops
+                let alloca = if let Some(entry_block) = self.entry_block {
+                    // Save current position
+                    let current_block = self.builder.get_insert_block();
+
+                    // Position at the start of entry block (before any non-alloca instructions)
+                    // Find the first non-alloca instruction to insert before it
+                    let mut insert_point = None;
+                    if let Some(first_instr) = entry_block.get_first_instruction() {
+                        let mut instr = first_instr;
+                        loop {
+                            // Check if this is an alloca instruction
+                            if instr.get_opcode() != inkwell::values::InstructionOpcode::Alloca {
+                                insert_point = Some(instr);
+                                break;
+                            }
+                            // Move to next instruction
+                            if let Some(next) = instr.get_next_instruction() {
+                                instr = next;
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+
+                    // Position builder: before first non-alloca, or at end if all are allocas
+                    if let Some(insert_instr) = insert_point {
+                        self.builder.position_before(&insert_instr);
+                    } else {
+                        self.builder.position_at_end(entry_block);
+                    }
+
+                    // Build the alloca in entry block
+                    let alloca = self.builder.build_alloca(llvm_ty, "alloca").unwrap();
+
+                    // Restore original position
+                    if let Some(block) = current_block {
+                        self.builder.position_at_end(block);
+                    }
+
+                    alloca
+                } else {
+                    // Fallback: no entry block (shouldn't happen), emit in place
+                    self.builder.build_alloca(llvm_ty, "alloca").unwrap()
+                };
+
                 // Track the type for this alloca so Load can use it
                 if let Some(vreg) = instr.result {
                     // Mark this VReg as an alloca (memory address, not a pointer value)
