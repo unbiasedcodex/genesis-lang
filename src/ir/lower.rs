@@ -1386,14 +1386,21 @@ impl Lowerer {
                     self.current_impl_type = None;
                 }
                 Item::Mod(m) => {
-                    // Lower functions inside inline modules
+                    // Lower items inside inline modules
                     if let Some(ref items) = m.items {
                         let prefix = m.name.name.clone();
                         for item in items {
-                            if let Item::Function(f) = item {
-                                if !self.is_generic_fn(f) {
-                                    self.lower_function_with_prefix(f, &prefix);
+                            match item {
+                                Item::Function(f) => {
+                                    if !self.is_generic_fn(f) {
+                                        self.lower_function_with_prefix(f, &prefix);
+                                    }
                                 }
+                                Item::Const(c) => {
+                                    // Lower module constants with qualified name
+                                    self.lower_const_def_with_prefix(c, Some(&prefix));
+                                }
+                                _ => {}
                             }
                         }
                     }
@@ -1786,16 +1793,29 @@ impl Lowerer {
 
     /// Lower a constant definition to a global variable
     fn lower_const_def(&mut self, c: &ast::ConstDef) {
-        let const_name = c.name.name.clone();
-        let global_name = format!("__const_{}", const_name);
+        self.lower_const_def_with_prefix(c, None);
+    }
+
+    /// Lower a constant definition with optional module prefix
+    fn lower_const_def_with_prefix(&mut self, c: &ast::ConstDef, prefix: Option<&str>) {
+        let base_name = c.name.name.clone();
+        let (const_name, global_name) = if let Some(p) = prefix {
+            (format!("{}::{}", p, base_name), format!("__const_{}_{}", p, base_name))
+        } else {
+            (base_name.clone(), format!("__const_{}", base_name))
+        };
 
         // Evaluate the constant expression to get initial value
         if let Some((init_val, ir_type)) = self.eval_const_expr(&c.value) {
             // Add global constant to module
             self.builder.add_global(&global_name, ir_type.clone(), Some(init_val), true);
 
-            // Register the constant for lookup
-            self.global_consts.insert(const_name, (global_name, ir_type));
+            // Register the constant for lookup (both qualified and unqualified)
+            self.global_consts.insert(const_name, (global_name.clone(), ir_type.clone()));
+            // Also register unqualified name for use within the same module
+            if prefix.is_some() {
+                self.global_consts.insert(base_name, (global_name, ir_type));
+            }
         }
     }
 
@@ -2389,7 +2409,10 @@ impl Lowerer {
                     }
                 } else {
                     // Check if this is a global constant
-                    if let Some((global_name, ir_type)) = self.global_consts.get(name).cloned() {
+                    // Try full qualified path first (e.g., "mymod::ADDR"), then simple name
+                    let const_lookup = self.global_consts.get(&full_path).cloned()
+                        .or_else(|| self.global_consts.get(name).cloned());
+                    if let Some((global_name, ir_type)) = const_lookup {
                         // Load value from global constant
                         let global_ptr = self.builder.global_ref(&global_name);
                         let vreg = self.builder.load(global_ptr);

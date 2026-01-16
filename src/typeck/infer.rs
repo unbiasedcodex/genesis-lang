@@ -536,6 +536,19 @@ impl TypeInference {
         self.ctx.define_var(&c.name.name, ty, false);
     }
 
+    /// Register a constant with a module prefix (e.g., "mymod::ADDR")
+    pub fn register_const_with_prefix(&mut self, c: &ConstDef, prefix: &str) {
+        let ty = c
+            .ty
+            .as_ref()
+            .map(|t| self.ast_type_to_ty(t))
+            .unwrap_or_else(Ty::fresh_var);
+        // Register both qualified name and unqualified name
+        let qualified_name = format!("{}::{}", prefix, c.name.name);
+        self.ctx.define_var(&qualified_name, ty.clone(), false);
+        self.ctx.define_var(&c.name.name, ty, false);
+    }
+
     // ============ Generic Bounds Utilities ============
 
     /// Extract generic bounds from AST Generics into a HashMap
@@ -1166,6 +1179,10 @@ impl TypeInference {
 
                     // Check if first segment is a module
                     if self.ctx.lookup_module(first).is_some() {
+                        // Look up the variable/constant with qualified name (e.g., mymod::ADDR)
+                        if let Some(symbol) = self.ctx.lookup_var(&full_name) {
+                            return Ok(symbol.ty.clone());
+                        }
                         // Look up the function with qualified name
                         if let Some(sig) = self.ctx.lookup_function(&full_name) {
                             // Check visibility

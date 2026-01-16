@@ -284,6 +284,9 @@ impl TypeChecker {
                         functions.push(f.name.name.clone());
                         self.inference.register_function_with_prefix(f, &name);
                     }
+                    crate::ast::Item::Const(c) => {
+                        self.inference.register_const_with_prefix(c, &name);
+                    }
                     _ => {
                         // Recursively handle other items
                     }
