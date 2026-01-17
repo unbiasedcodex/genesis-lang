@@ -3,15 +3,14 @@
 //! Provides parsing and type checking for Genesis source files.
 
 use std::collections::HashMap;
-use genesis::ast::{self, Program, Item, Expr, ExprKind, Ident, FnDef, StructDef, EnumDef, TraitDef, ImplDef, ImplItem, StmtKind};
+use genesis::ast::{self, Program, Item, Expr, ExprKind, FnDef, ImplItem, StmtKind};
 use genesis::parser::{self, ParseError};
 use genesis::span::Span;
 use genesis::typeck::{self, Ty, TypeError, TypedProgram};
 use tower_lsp::lsp_types::{
-    Diagnostic, DiagnosticSeverity, Position, Range, CompletionItem,
-    CompletionItemKind, SymbolKind, DocumentSymbol, Location, Hover,
-    HoverContents, MarkedString, SignatureHelp, SignatureInformation,
-    ParameterInformation,
+    Diagnostic, DiagnosticSeverity, Position, CompletionItem,
+    CompletionItemKind, SymbolKind, DocumentSymbol, Hover,
+    HoverContents, MarkedString,
 };
 
 use crate::utils::LineIndex;
@@ -36,7 +35,7 @@ pub struct AnalysisResult {
 /// A symbol definition
 #[derive(Debug, Clone)]
 pub struct SymbolDefinition {
-    pub name: String,
+    pub _name: String,
     pub span: Span,
     pub kind: SymbolDefKind,
     pub ty: Option<Ty>,
@@ -50,6 +49,7 @@ pub enum SymbolDefKind {
     Struct,
     Enum,
     Trait,
+    #[allow(dead_code)]
     Variable,
     Constant,
     Field,
@@ -134,7 +134,7 @@ fn collect_definitions(program: &Program, definitions: &mut HashMap<String, Symb
                 definitions.insert(
                     f.name.name.clone(),
                     SymbolDefinition {
-                        name: f.name.name.clone(),
+                        _name: f.name.name.clone(),
                         span: f.name.span,
                         kind: SymbolDefKind::Function,
                         ty: None,
@@ -146,7 +146,7 @@ fn collect_definitions(program: &Program, definitions: &mut HashMap<String, Symb
                 definitions.insert(
                     s.name.name.clone(),
                     SymbolDefinition {
-                        name: s.name.name.clone(),
+                        _name: s.name.name.clone(),
                         span: s.name.span,
                         kind: SymbolDefKind::Struct,
                         ty: None,
@@ -159,7 +159,7 @@ fn collect_definitions(program: &Program, definitions: &mut HashMap<String, Symb
                     definitions.insert(
                         field_name,
                         SymbolDefinition {
-                            name: field.name.name.clone(),
+                            _name: field.name.name.clone(),
                             span: field.name.span,
                             kind: SymbolDefKind::Field,
                             ty: None,
@@ -172,7 +172,7 @@ fn collect_definitions(program: &Program, definitions: &mut HashMap<String, Symb
                 definitions.insert(
                     e.name.name.clone(),
                     SymbolDefinition {
-                        name: e.name.name.clone(),
+                        _name: e.name.name.clone(),
                         span: e.name.span,
                         kind: SymbolDefKind::Enum,
                         ty: None,
@@ -184,7 +184,7 @@ fn collect_definitions(program: &Program, definitions: &mut HashMap<String, Symb
                 definitions.insert(
                     t.name.name.clone(),
                     SymbolDefinition {
-                        name: t.name.name.clone(),
+                        _name: t.name.name.clone(),
                         span: t.name.span,
                         kind: SymbolDefKind::Trait,
                         ty: None,
@@ -196,7 +196,7 @@ fn collect_definitions(program: &Program, definitions: &mut HashMap<String, Symb
                 definitions.insert(
                     c.name.name.clone(),
                     SymbolDefinition {
-                        name: c.name.name.clone(),
+                        _name: c.name.name.clone(),
                         span: c.name.span,
                         kind: SymbolDefKind::Constant,
                         ty: None,
@@ -208,7 +208,7 @@ fn collect_definitions(program: &Program, definitions: &mut HashMap<String, Symb
                 definitions.insert(
                     a.name.name.clone(),
                     SymbolDefinition {
-                        name: a.name.name.clone(),
+                        _name: a.name.name.clone(),
                         span: a.name.span,
                         kind: SymbolDefKind::Actor,
                         ty: None,
@@ -220,7 +220,7 @@ fn collect_definitions(program: &Program, definitions: &mut HashMap<String, Symb
                 definitions.insert(
                     t.name.name.clone(),
                     SymbolDefinition {
-                        name: t.name.name.clone(),
+                        _name: t.name.name.clone(),
                         span: t.name.span,
                         kind: SymbolDefKind::TypeAlias,
                         ty: None,
@@ -236,7 +236,7 @@ fn collect_definitions(program: &Program, definitions: &mut HashMap<String, Symb
                         definitions.insert(
                             method_name,
                             SymbolDefinition {
-                                name: method.name.name.clone(),
+                                _name: method.name.name.clone(),
                                 span: method.name.span,
                                 kind: SymbolDefKind::Method,
                                 ty: None,
@@ -250,7 +250,7 @@ fn collect_definitions(program: &Program, definitions: &mut HashMap<String, Symb
                 definitions.insert(
                     m.name.name.clone(),
                     SymbolDefinition {
-                        name: m.name.name.clone(),
+                        _name: m.name.name.clone(),
                         span: m.name.span,
                         kind: SymbolDefKind::Module,
                         ty: None,
@@ -263,7 +263,7 @@ fn collect_definitions(program: &Program, definitions: &mut HashMap<String, Symb
                 definitions.insert(
                     m.name.name.clone(),
                     SymbolDefinition {
-                        name: m.name.name.clone(),
+                        _name: m.name.name.clone(),
                         span: m.name.span,
                         kind: SymbolDefKind::Function, // Treat macros like functions for LSP purposes
                         ty: None,

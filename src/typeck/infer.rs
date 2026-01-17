@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use crate::ast::{
     self, BinaryOp, Block, ConstDef, EnumDef, Expr, ExprKind, FnDef, Generics, ImplDef, Literal, Pattern,
     PatternKind, Stmt, StmtKind, StructDef, TraitDef, Type as AstType, TypeKind as AstTypeKind,
-    UnaryOp, ActorDef, TypeAlias, MacroInvocation,
+    UnaryOp, ActorDef, TypeAlias,
 };
 use crate::span::Span;
 use crate::typeck::context::{TypeContext, FnSig, ImplDef as CtxImplDef, ActorDef as CtxActorDef, TraitDef as CtxTraitDef, MessageDef};
@@ -777,7 +777,7 @@ impl TypeInference {
         // Get the type name from base_ty
         let type_name = match &base_ty.kind {
             TyKind::Named { name, .. } => name.clone(),
-            TyKind::Generic { name, .. } => {
+            TyKind::Generic { name: _, .. } => {
                 // If it's still generic (like Self), we can't resolve yet
                 return Ty::projection(base_ty.clone(), assoc_name.to_string());
             }

@@ -206,7 +206,7 @@ pub struct HygieneContext {
     /// Counter for generating unique symbol names
     gensym_counter: u64,
     /// Current expansion depth (for debugging)
-    expansion_depth: u32,
+    _expansion_depth: u32,
     /// Set of names that should be hygienically renamed
     /// These are identifiers that appear in the macro definition body
     /// but are NOT capture variables
@@ -224,7 +224,7 @@ impl HygieneContext {
     pub fn new() -> Self {
         Self {
             gensym_counter: 0,
-            expansion_depth: 0,
+            _expansion_depth: 0,
             hygiene_enabled: true,
         }
     }
@@ -1766,7 +1766,7 @@ impl MacroExpander {
 }
 
 /// Convert expanded macro tokens to an expression AST
-pub fn tokens_to_expr(tokens: &[MacroToken], span: Span) -> Option<Expr> {
+pub fn tokens_to_expr(tokens: &[MacroToken], _span: Span) -> Option<Expr> {
     if tokens.is_empty() {
         return None;
     }

@@ -438,7 +438,7 @@ impl<'src> Parser<'src> {
 
     // ============ Struct parsing ============
 
-    fn parse_struct(&mut self, is_pub: bool) -> ParseResult<StructDef> {
+    fn _parse_struct(&mut self, is_pub: bool) -> ParseResult<StructDef> {
         self.parse_struct_with_repr(is_pub, None)
     }
 
@@ -2484,7 +2484,7 @@ impl<'src> Parser<'src> {
     /// asm!("out dx, al", in("dx") port, in("al") value, options(nomem, nostack))
     /// ```
     fn parse_inline_asm(&mut self) -> ParseResult<Expr> {
-        use ast::{AsmOperand, AsmOperandKind, AsmOptions, AsmRegSpec};
+        use ast::{AsmOperand, AsmOperandKind, AsmOptions};
 
         let start = self.current.span.start;
         self.expect(TokenKind::Asm)?;

@@ -575,7 +575,7 @@ impl Lowerer {
 
     /// Check if this is a trait object coercion and perform it if needed
     /// Returns the (possibly coerced) value
-    fn maybe_coerce_to_trait_object(
+    fn _maybe_coerce_to_trait_object(
         &mut self,
         value: VReg,
         source_ty: Option<&Ty>,
@@ -682,7 +682,7 @@ impl Lowerer {
     }
 
     /// Get specialized struct field types by mangled name
-    fn get_specialized_struct_fields(&self, mangled_name: &str) -> Option<&[(String, IrType)]> {
+    fn _get_specialized_struct_fields(&self, mangled_name: &str) -> Option<&[(String, IrType)]> {
         self.specialized_structs.get(mangled_name).map(|v| v.as_slice())
     }
 
@@ -901,7 +901,7 @@ impl Lowerer {
     // ============ HARC Memory Management Helpers ============
 
     /// Get type ID for a type name (for destructor dispatch)
-    fn get_type_id(&self, type_name: &str) -> u64 {
+    fn _get_type_id(&self, type_name: &str) -> u64 {
         // Extract base type name
         let base = type_name.split('<').next().unwrap_or(type_name);
         match base {
@@ -3538,7 +3538,7 @@ impl Lowerer {
                 let struct_ptr = self.builder.malloc(struct_ty);
 
                 // Initialize each field
-                for (i, (field_name, value)) in fields.iter().enumerate() {
+                for (i, (_field_name, value)) in fields.iter().enumerate() {
                     let field_ptr = self.builder.get_field_ptr(struct_ptr, i as u32);
 
                     // Check if this field is a nested struct
@@ -4664,7 +4664,7 @@ impl Lowerer {
     }
 
     /// Get the size in bytes for an IR type
-    fn type_size(&self, ty: &IrType) -> usize {
+    fn _type_size(&self, ty: &IrType) -> usize {
         match ty {
             IrType::I8 | IrType::Bool => 1,
             IrType::I16 => 2,
@@ -4672,10 +4672,10 @@ impl Lowerer {
             IrType::I64 | IrType::F64 | IrType::Ptr(_) => 8,
             IrType::Struct(fields) | IrType::StructPacked(fields) => {
                 // Sum of all field sizes (simplified, doesn't account for alignment)
-                fields.iter().map(|f| self.type_size(f)).sum()
+                fields.iter().map(|f| self._type_size(f)).sum()
             }
             IrType::Array(elem, count) => {
-                self.type_size(elem) * count
+                self._type_size(elem) * count
             }
             _ => 8, // Default to 8 bytes
         }
@@ -7450,7 +7450,7 @@ impl Lowerer {
         let check_delim = self.builder.create_block();
         let delim_match = self.builder.create_block();
         let delim_byte_check = self.builder.create_block();
-        let delim_bytes_equal = self.builder.create_block();
+        let _delim_bytes_equal = self.builder.create_block();
         let delim_inc_j = self.builder.create_block();
         let found_delim = self.builder.create_block();
         let no_delim = self.builder.create_block();
@@ -7725,7 +7725,7 @@ impl Lowerer {
         let count_check = self.builder.create_block();
         let count_match = self.builder.create_block();
         let count_byte_check = self.builder.create_block();
-        let count_bytes_eq = self.builder.create_block();
+        let _count_bytes_eq = self.builder.create_block();
         let count_inc_j = self.builder.create_block();
         let count_found = self.builder.create_block();
         let count_not_found = self.builder.create_block();
@@ -7803,7 +7803,7 @@ impl Lowerer {
         let build_check = self.builder.create_block();
         let build_match = self.builder.create_block();
         let build_byte_check = self.builder.create_block();
-        let build_bytes_eq = self.builder.create_block();
+        let _build_bytes_eq = self.builder.create_block();
         let build_inc_j = self.builder.create_block();
         let build_found = self.builder.create_block();
         let build_not_found = self.builder.create_block();
@@ -10954,7 +10954,7 @@ impl Lowerer {
     }
 
     /// Entry size in i64 units (key, value, occupied = 3)
-    fn hashmap_entry_size(&self) -> i64 {
+    fn _hashmap_entry_size(&self) -> i64 {
         3
     }
 
@@ -12245,7 +12245,7 @@ impl Lowerer {
         let probe_idx = self.builder.alloca(IrType::I64);
         self.builder.store(probe_idx, hash);
 
-        let zero = self.builder.const_int(0);
+        let _zero = self.builder.const_int(0);
         let one = self.builder.const_int(1);
 
         self.builder.br(probe_block);
@@ -12369,7 +12369,7 @@ impl Lowerer {
         let probe_idx = self.builder.alloca(IrType::I64);
         self.builder.store(probe_idx, hash);
 
-        let zero = self.builder.const_int(0);
+        let _zero = self.builder.const_int(0);
 
         self.builder.br(probe_block);
 
@@ -13735,7 +13735,7 @@ impl Lowerer {
         let check_state_block = self.builder.create_block();
         let not_started_block = self.builder.create_block();
         let pending_block = self.builder.create_block();
-        let run_tasks_block = self.builder.create_block();
+        let _run_tasks_block = self.builder.create_block();
         let done_block = self.builder.create_block();
 
         // Result slot
@@ -18024,8 +18024,8 @@ impl Lowerer {
 
     /// Lower vec![] macro - create an empty or initialized Vec
     fn lower_builtin_vec_macro(&mut self, tokens: &[crate::ast::MacroToken]) -> VReg {
+        #[allow(unused_imports)]
         use crate::ast::MacroToken;
-        use crate::token::TokenKind;
 
         // Call Vec::new() to create the vec
         let vec_ptr = self.builder.call("__vec_new", vec![]);
@@ -18215,8 +18215,8 @@ impl Lowerer {
 
     /// Lower eprintln!/eprint! macro (to stderr)
     fn lower_builtin_eprint_macro(&mut self, tokens: &[crate::ast::MacroToken], newline: bool) -> VReg {
+        #[allow(unused_imports)]
         use crate::ast::MacroToken;
-        use crate::token::TokenKind;
 
         if tokens.is_empty() {
             if newline {
@@ -18424,7 +18424,7 @@ impl Lowerer {
 
     /// Parse format placeholder content: {arg:spec} or {} or {0} or {name}
     /// Returns (optional_arg_specifier, format_spec)
-    fn parse_format_placeholder(&self, chars: &mut std::iter::Peekable<std::str::Chars>) -> (Option<String>, FormatSpec) {
+    fn _parse_format_placeholder(&self, chars: &mut std::iter::Peekable<std::str::Chars>) -> (Option<String>, FormatSpec) {
         let mut arg_part = String::new();
         let mut spec = FormatSpec::default();
 
@@ -18622,16 +18622,16 @@ impl Lowerer {
     }
 
     /// Append a literal string to the format buffer
-    fn format_append_literal(&mut self, str_ptr: VReg, literal: &str) {
+    fn _format_append_literal(&mut self, str_ptr: VReg, literal: &str) {
         let const_str = self.builder.add_string_constant(literal);
         let const_ptr = self.builder.global_string_ptr(&const_str);
         let byte_len = self.builder.const_int(literal.len() as i64);
-        self.format_push_bytes(str_ptr, const_ptr, byte_len);
+        self._format_push_bytes(str_ptr, const_ptr, byte_len);
     }
 
     /// Inline implementation of pushing bytes to a String (replaces __string_push_bytes)
     /// Simplified: always allocates new buffer to avoid complex control flow
-    fn format_push_bytes(&mut self, str_ptr: VReg, src_ptr: VReg, src_len: VReg) {
+    fn _format_push_bytes(&mut self, str_ptr: VReg, src_ptr: VReg, src_len: VReg) {
         // Load current len
         let len_field = self.builder.get_field_ptr(str_ptr, 1);
         let len = self.builder.load(len_field);
@@ -18678,7 +18678,7 @@ impl Lowerer {
     }
 
     /// Append a formatted value to the format buffer
-    fn format_append_value(&mut self, str_ptr: VReg, value: VReg, spec: &FormatSpec) {
+    fn _format_append_value(&mut self, str_ptr: VReg, value: VReg, spec: &FormatSpec) {
         // Determine value type from vreg_types
         let is_float = self.vreg_types.get(&value).map_or(false, |ty| {
             matches!(ty, IrType::F32 | IrType::F64)
@@ -18699,18 +18699,18 @@ impl Lowerer {
             let data_ptr = self.builder.load(data_ptr_ptr);
             let len_ptr = self.builder.get_field_ptr(value, 1);
             let len = self.builder.load(len_ptr);
-            self.format_push_bytes(str_ptr, data_ptr, len);
+            self._format_push_bytes(str_ptr, data_ptr, len);
         } else if is_float {
             // Format float
-            self.format_append_float(str_ptr, value, spec);
+            self._format_append_float(str_ptr, value, spec);
         } else {
             // Format integer (default)
-            self.format_append_int(str_ptr, value, spec);
+            self._format_append_int(str_ptr, value, spec);
         }
     }
 
     /// Append formatted integer to string (inline implementation)
-    fn format_append_int(&mut self, str_ptr: VReg, value: VReg, spec: &FormatSpec) {
+    fn _format_append_int(&mut self, str_ptr: VReg, value: VReg, spec: &FormatSpec) {
         // Use sprintf directly with appropriate format string
         let buffer_size = self.builder.const_int(64);
         let buffer = self.builder.malloc_array(IrType::I8, buffer_size);
@@ -18739,13 +18739,13 @@ impl Lowerer {
 
         // Get length and push to string
         let len = self.builder.call("strlen", vec![buffer]);
-        self.format_push_bytes(str_ptr, buffer, len);
+        self._format_push_bytes(str_ptr, buffer, len);
         // Note: not freeing buffer to avoid heap corruption with multiple reallocs
         // Minor memory leak but stable
     }
 
     /// Append formatted float to string (inline implementation)
-    fn format_append_float(&mut self, str_ptr: VReg, value: VReg, spec: &FormatSpec) {
+    fn _format_append_float(&mut self, str_ptr: VReg, value: VReg, spec: &FormatSpec) {
         let buffer_size = self.builder.const_int(64);
         let buffer = self.builder.malloc_array(IrType::I8, buffer_size);
 
@@ -18763,7 +18763,7 @@ impl Lowerer {
 
         // Get length and push to string
         let len = self.builder.call("strlen", vec![buffer]);
-        self.format_push_bytes(str_ptr, buffer, len);
+        self._format_push_bytes(str_ptr, buffer, len);
         self.builder.call("free", vec![buffer]);
     }
 

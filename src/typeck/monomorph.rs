@@ -26,7 +26,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::ast::{Program, Item, FnDef, StructDef, EnumDef};
+use crate::ast::{Program, Item};
 use crate::span::Span;
 use super::ty::{Ty, TyKind};
 use super::context::TypeContext;
@@ -55,7 +55,7 @@ pub struct MonomorphCollector {
 /// Information about a generic definition
 #[derive(Debug, Clone)]
 pub struct GenericDef {
-    pub name: String,
+    pub _name: String,
     pub type_params: Vec<String>,
 }
 
@@ -107,7 +107,7 @@ impl MonomorphCollector {
                             self.generic_structs.insert(
                                 s.name.name.clone(),
                                 GenericDef {
-                                    name: s.name.name.clone(),
+                                    _name: s.name.name.clone(),
                                     type_params,
                                 },
                             );
@@ -124,7 +124,7 @@ impl MonomorphCollector {
                             self.generic_enums.insert(
                                 e.name.name.clone(),
                                 GenericDef {
-                                    name: e.name.name.clone(),
+                                    _name: e.name.name.clone(),
                                     type_params,
                                 },
                             );
@@ -141,7 +141,7 @@ impl MonomorphCollector {
                             self.generic_fns.insert(
                                 f.name.name.clone(),
                                 GenericDef {
-                                    name: f.name.name.clone(),
+                                    _name: f.name.name.clone(),
                                     type_params,
                                 },
                             );

@@ -13,15 +13,15 @@ use crate::utils::LineIndex;
 #[derive(Debug)]
 pub struct Document {
     /// The document URI
-    pub uri: Url,
+    pub _uri: Url,
     /// Current document content
     pub content: String,
     /// Line index for position conversion
     pub line_index: LineIndex,
     /// Version for incremental sync
-    pub version: i32,
+    pub _version: i32,
     /// Cached analysis result
-    pub analysis: Option<AnalysisResult>,
+    pub _analysis: Option<AnalysisResult>,
 }
 
 impl Document {
@@ -29,25 +29,25 @@ impl Document {
     pub fn new(uri: Url, content: String, version: i32) -> Self {
         let line_index = LineIndex::new(&content);
         Self {
-            uri,
+            _uri: uri,
             content,
             line_index,
-            version,
-            analysis: None,
+            _version: version,
+            _analysis: None,
         }
     }
 
     /// Update document content
-    pub fn update(&mut self, content: String, version: i32) {
+    pub fn _update(&mut self, content: String, version: i32) {
         self.content = content;
         self.line_index = LineIndex::new(&self.content);
-        self.version = version;
-        self.analysis = None; // Invalidate analysis
+        self._version = version;
+        self._analysis = None; // Invalidate analysis
     }
 
     /// Set analysis result
-    pub fn set_analysis(&mut self, analysis: AnalysisResult) {
-        self.analysis = Some(analysis);
+    pub fn _set_analysis(&mut self, analysis: AnalysisResult) {
+        self._analysis = Some(analysis);
     }
 }
 
@@ -95,7 +95,7 @@ impl DocumentStore {
     }
 
     /// Get all document URIs
-    pub fn uris(&self) -> Vec<Url> {
+    pub fn _uris(&self) -> Vec<Url> {
         self.documents.iter().map(|r| r.key().clone()).collect()
     }
 }

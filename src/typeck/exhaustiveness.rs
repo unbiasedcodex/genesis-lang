@@ -30,7 +30,7 @@ pub struct ExhaustivenessResult {
     /// Missing patterns (witness of non-exhaustiveness)
     pub missing: Vec<MissingPattern>,
     /// Unreachable patterns (redundant arms)
-    pub unreachable: Vec<Span>,
+    pub _unreachable: Vec<Span>,
 }
 
 /// A missing pattern that would make the match exhaustive
@@ -68,7 +68,7 @@ pub enum Constructor {
 
 impl Constructor {
     /// Get the arity (number of fields) of this constructor
-    fn arity(&self) -> usize {
+    fn _arity(&self) -> usize {
         match self {
             Constructor::Variant { arity, .. } => *arity,
             Constructor::Bool(_) => 0,
@@ -130,7 +130,7 @@ impl<'a> ExhaustivenessChecker<'a> {
             return ExhaustivenessResult {
                 is_exhaustive: true,
                 missing: Vec::new(),
-                unreachable,
+                _unreachable: unreachable,
             };
         }
 
@@ -140,7 +140,7 @@ impl<'a> ExhaustivenessChecker<'a> {
         ExhaustivenessResult {
             is_exhaustive: missing.is_empty(),
             missing,
-            unreachable,
+            _unreachable: unreachable,
         }
     }
 

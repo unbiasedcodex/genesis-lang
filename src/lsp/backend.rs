@@ -2,6 +2,7 @@
 //!
 //! Implements the Language Server Protocol for Genesis.
 
+#[allow(unused_imports)]
 use std::sync::Arc;
 use dashmap::DashMap;
 use tower_lsp::jsonrpc::Result;
@@ -9,7 +10,7 @@ use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer};
 
 use crate::analysis::{self, AnalysisResult};
-use crate::document::{Document, DocumentStore};
+use crate::document::DocumentStore;
 use crate::utils::LineIndex;
 
 /// The Genesis Language Server backend

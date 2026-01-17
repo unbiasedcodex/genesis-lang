@@ -81,7 +81,7 @@ impl LineIndex {
     }
 
     /// Convert an LSP Range to a Genesis Span
-    pub fn range_to_span(&self, range: Range) -> Span {
+    pub fn _range_to_span(&self, range: Range) -> Span {
         Span {
             start: self.position_to_offset(range.start),
             end: self.position_to_offset(range.end),
@@ -89,25 +89,25 @@ impl LineIndex {
     }
 
     /// Check if an offset is within a span
-    pub fn offset_in_span(&self, offset: usize, span: Span) -> bool {
+    pub fn _offset_in_span(&self, offset: usize, span: Span) -> bool {
         offset >= span.start && offset < span.end
     }
 
     /// Check if a position is within a span
-    pub fn position_in_span(&self, position: Position, span: Span) -> bool {
+    pub fn _position_in_span(&self, position: Position, span: Span) -> bool {
         let offset = self.position_to_offset(position);
-        self.offset_in_span(offset, span)
+        self._offset_in_span(offset, span)
     }
 
     /// Get the text content of a span
-    pub fn span_text(&self, span: Span) -> String {
+    pub fn _span_text(&self, span: Span) -> String {
         let start_char = self.rope.byte_to_char(span.start.min(self.rope.len_bytes()));
         let end_char = self.rope.byte_to_char(span.end.min(self.rope.len_bytes()));
         self.rope.slice(start_char..end_char).to_string()
     }
 
     /// Get the total length in bytes
-    pub fn len(&self) -> usize {
+    pub fn _len(&self) -> usize {
         self.rope.len_bytes()
     }
 }
