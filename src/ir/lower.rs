@@ -1625,23 +1625,10 @@ impl Lowerer {
                     self.current_impl_type = None;
                 }
                 Item::Mod(m) => {
-                    // Lower items inside inline modules
+                    // Lower items inside inline modules recursively
                     if let Some(ref items) = m.items {
                         let prefix = m.name.name.clone();
-                        for item in items {
-                            match item {
-                                Item::Function(f) => {
-                                    if !self.is_generic_fn(f) {
-                                        self.lower_function_with_prefix(f, &prefix);
-                                    }
-                                }
-                                Item::Const(c) => {
-                                    // Lower module constants with qualified name
-                                    self.lower_const_def_with_prefix(c, Some(&prefix));
-                                }
-                                _ => {}
-                            }
-                        }
+                        self.lower_module_items(items, &prefix);
                     }
                 }
                 _ => {
@@ -2083,6 +2070,34 @@ impl Lowerer {
                 }
             }
             _ => None, // Other expressions not supported as constants yet
+        }
+    }
+
+    /// Lower items inside a module recursively
+    /// prefix is the qualified path to this module (e.g., "net" or "net::e1000")
+    fn lower_module_items(&mut self, items: &[Item], prefix: &str) {
+        for item in items {
+            match item {
+                Item::Function(f) => {
+                    if !self.is_generic_fn(f) {
+                        self.lower_function_with_prefix(f, prefix);
+                    }
+                }
+                Item::Const(c) => {
+                    // Lower module constants with qualified name
+                    self.lower_const_def_with_prefix(c, Some(prefix));
+                }
+                Item::Mod(m) => {
+                    // Recursively lower nested modules with extended prefix
+                    if let Some(ref nested_items) = m.items {
+                        let nested_prefix = format!("{}::{}", prefix, m.name.name);
+                        self.lower_module_items(nested_items, &nested_prefix);
+                    }
+                }
+                _ => {
+                    // Other items not yet supported in modules
+                }
+            }
         }
     }
 
@@ -3571,14 +3586,22 @@ impl Lowerer {
                     return self.lower_tcp_stream_close(args);
                 }
 
-                // Qualify unqualified function calls for module context
-                let qualified_name = if !func_name.contains("::") {
-                    if let Some(ref module) = self.current_module {
+                // Qualify function calls for module context
+                // - If func_name has no ::, prefix with current module
+                // - If func_name has ::, it's a relative path from current module (e.g., sub::fn)
+                //   so we need to prefix with current module to get absolute path
+                let qualified_name = if let Some(ref module) = self.current_module {
+                    if func_name.contains("::") {
+                        // Relative path like "e1000::e1000_init" in module "net"
+                        // becomes "net::e1000::e1000_init"
                         format!("{}::{}", module, func_name)
                     } else {
-                        func_name
+                        // Simple name like "helper" in module "net"
+                        // becomes "net::helper"
+                        format!("{}::{}", module, func_name)
                     }
                 } else {
+                    // Top-level call, use as-is
                     func_name
                 };
 

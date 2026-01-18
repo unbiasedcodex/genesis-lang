@@ -3473,10 +3473,28 @@ pub fn parse_file(path: &std::path::Path) -> Result<(Program, Vec<ParseError>), 
 /// Resolve external modules in a parsed program
 /// This function takes a program and resolves any `mod foo;` declarations
 /// by loading the corresponding .gl files
+/// Now supports recursive module resolution for nested modules
 pub fn resolve_external_modules(program: &mut Program, base_path: &std::path::Path) -> Vec<ParseError> {
     let mut errors = Vec::new();
+    resolve_modules_recursive(&mut program.items, base_path, &mut errors, 0);
+    errors
+}
 
-    for item in &mut program.items {
+/// Recursively resolve modules in a list of items
+/// max_depth prevents infinite recursion from circular module dependencies
+fn resolve_modules_recursive(
+    items: &mut Vec<Item>,
+    base_path: &std::path::Path,
+    errors: &mut Vec<ParseError>,
+    depth: usize,
+) {
+    const MAX_DEPTH: usize = 32; // Prevent infinite recursion
+
+    if depth > MAX_DEPTH {
+        return;
+    }
+
+    for item in items.iter_mut() {
         if let Item::Mod(ref mut mod_def) = item {
             if mod_def.items.is_none() {
                 // External module - need to resolve from file
@@ -3486,19 +3504,32 @@ pub fn resolve_external_modules(program: &mut Program, base_path: &std::path::Pa
                 let mut mod_path = base_path.to_path_buf();
                 mod_path.push(format!("{}.gl", mod_name));
 
+                // Track which path style we used for nested module resolution
+                let mut nested_base_path = base_path.to_path_buf();
+
                 if !mod_path.exists() {
                     // Try foo/mod.gl
                     mod_path = base_path.to_path_buf();
                     mod_path.push(mod_name);
                     mod_path.push("mod.gl");
+
+                    // For foo/mod.gl, nested modules should look in foo/
+                    nested_base_path = base_path.to_path_buf();
+                    nested_base_path.push(mod_name);
                 }
 
                 if mod_path.exists() {
                     match std::fs::read_to_string(&mod_path) {
                         Ok(source) => {
                             let source: &'static str = Box::leak(source.into_boxed_str());
-                            let (mod_program, parse_errors) = parse(source);
+                            let (mut mod_program, parse_errors) = parse(source);
                             errors.extend(parse_errors);
+
+                            // Recursively resolve any nested modules in this module
+                            // Use the directory containing the module file as base path
+                            let module_dir = mod_path.parent().unwrap_or(base_path);
+                            resolve_modules_recursive(&mut mod_program.items, module_dir, errors, depth + 1);
+
                             // Set the items from the external file
                             mod_def.items = Some(mod_program.items);
                         }
@@ -3511,16 +3542,19 @@ pub fn resolve_external_modules(program: &mut Program, base_path: &std::path::Pa
                     }
                 } else {
                     errors.push(ParseError::Custom {
-                        message: format!("Cannot find module '{}' - tried {}.gl and {}/mod.gl",
-                            mod_name, mod_name, mod_name),
+                        message: format!("Cannot find module '{}' - tried {}.gl and {}/mod.gl in {}",
+                            mod_name, mod_name, mod_name, base_path.display()),
                         span: mod_def.span,
                     });
+                }
+            } else {
+                // Inline module with items - still need to resolve any nested external modules
+                if let Some(ref mut nested_items) = mod_def.items {
+                    resolve_modules_recursive(nested_items, base_path, errors, depth + 1);
                 }
             }
         }
     }
-
-    errors
 }
 
 #[cfg(test)]
