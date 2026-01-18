@@ -12,6 +12,7 @@ mod types;
 mod builder;
 mod lower;
 mod llvm;
+mod optimize;
 
 // Re-export in logical order
 pub use instr::*;
@@ -19,3 +20,4 @@ pub use types::*;
 pub use builder::*;
 pub use lower::*;
 pub use llvm::*;
+pub use optimize::*;

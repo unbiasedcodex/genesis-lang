@@ -182,7 +182,10 @@ fn main() -> miette::Result<()> {
                         .with_monomorph(typed_program.monomorph)
                         .with_generic_fn_calls(typed_program.generic_fn_calls)
                         .with_freestanding(freestanding);
-                    let module = lowerer.lower_program(&ast);
+                    let mut module = lowerer.lower_program(&ast);
+
+                    // Run IR-level optimizations (constant folding, DCE)
+                    genesis::ir::optimize_module(&mut module);
 
                     if emit_ir {
                         println!("\n=== Genesis IR ===");

@@ -62,3 +62,4 @@ pub mod escape;
 pub use rc::*;
 pub use drop::*;
 pub use region::*;
+pub use escape::*;

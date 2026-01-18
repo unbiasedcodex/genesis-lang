@@ -1021,8 +1021,16 @@ impl IrBuilder {
 
     pub fn br(&mut self, target: BlockId) {
         if let Some(ref mut block) = self.current_block {
-            block.terminator = Some(Terminator::Br(target));
+            // Only add branch if block is not already terminated
+            if block.terminator.is_none() {
+                block.terminator = Some(Terminator::Br(target));
+            }
         }
+    }
+
+    /// Check if current block already has a terminator
+    pub fn is_terminated(&self) -> bool {
+        self.current_block.as_ref().map_or(false, |b| b.terminator.is_some())
     }
 
     pub fn cond_br(&mut self, cond: VReg, then_block: BlockId, else_block: BlockId) {

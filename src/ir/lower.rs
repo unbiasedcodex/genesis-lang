@@ -14,7 +14,7 @@ use crate::ast::{
     Program, Stmt, StmtKind, UnaryOp,
 };
 use crate::typeck::{Ty, TyKind, MonomorphCollector};
-use crate::memory::{DropTracker, RcTypeInfo};
+use crate::memory::{DropTracker, RcTypeInfo, EscapeAnalyzer, OptimizationHints};
 use crate::macro_expand::MacroExpander;
 
 use super::builder::IrBuilder;
@@ -77,6 +77,8 @@ pub struct Lowerer {
     rc_type_info: RcTypeInfo,
     /// Map from variable names to their source type names (for drop dispatch)
     var_type_names: HashMap<String, String>,
+    /// Optimization hints from escape analysis for current function
+    escape_hints: Option<OptimizationHints>,
 
     // ============ Monomorphization ============
     /// Monomorphization collector with generic instantiation info
@@ -174,6 +176,7 @@ impl Lowerer {
             drop_tracker: DropTracker::new(),
             rc_type_info: RcTypeInfo::new(),
             var_type_names: HashMap::new(),
+            escape_hints: None,
             // Monomorphization
             monomorph: None,
             specialized_structs: HashMap::new(),
@@ -218,6 +221,234 @@ impl Lowerer {
     pub fn with_generic_fn_calls(mut self, calls: HashMap<crate::span::Span, (String, Vec<Ty>)>) -> Self {
         self.generic_fn_calls = calls;
         self
+    }
+
+    // ============ Escape Analysis ============
+
+    /// Analyze a function to determine escape information for variables
+    /// This enables optimizations like stack allocation and RC elision
+    fn analyze_function_escapes(&self, f: &FnDef) -> OptimizationHints {
+        let mut analyzer = EscapeAnalyzer::new();
+
+        // Register parameters as potentially escaped (they come from outside)
+        for param in &f.params {
+            analyzer.register_param(param.name.name.clone());
+        }
+
+        // Analyze the function body
+        self.analyze_block_escapes(&f.body, &mut analyzer);
+
+        // Build optimization hints from analysis
+        let results = analyzer.finalize();
+        OptimizationHints::from_analysis(&results)
+    }
+
+    /// Analyze a block for escape information
+    fn analyze_block_escapes(&self, block: &Block, analyzer: &mut EscapeAnalyzer) {
+        analyzer.enter_scope();
+
+        for stmt in &block.stmts {
+            self.analyze_stmt_escapes(stmt, analyzer);
+        }
+
+        if let Some(expr) = &block.expr {
+            // The final expression of a block might be returned
+            self.analyze_expr_escapes(expr, analyzer, true);
+        }
+
+        analyzer.leave_scope();
+    }
+
+    /// Analyze a statement for escape information
+    fn analyze_stmt_escapes(&self, stmt: &Stmt, analyzer: &mut EscapeAnalyzer) {
+        match &stmt.kind {
+            StmtKind::Let { pattern, value, .. } => {
+                // Register the variable
+                if let PatternKind::Ident { name, .. } = &pattern.kind {
+                    analyzer.register_local(name.name.clone());
+
+                    // If the value is an expression, analyze it
+                    if let Some(val) = value {
+                        // Check if this creates an alias (variable assigned from another variable)
+                        if let ExprKind::Path(ref path) = val.kind {
+                            if path.segments.len() == 1 {
+                                analyzer.add_alias(&path.segments[0].ident.name, &name.name);
+                            }
+                        }
+                        self.analyze_expr_escapes(val, analyzer, false);
+                    }
+                }
+            }
+            StmtKind::Expr(expr) => {
+                self.analyze_expr_escapes(expr, analyzer, false);
+            }
+            StmtKind::Item(_) => {
+                // Local items don't escape
+            }
+        }
+    }
+
+    /// Helper to extract simple variable name from a Path expression
+    fn path_to_name(path: &ast::Path) -> Option<&str> {
+        if path.segments.len() == 1 {
+            Some(&path.segments[0].ident.name)
+        } else {
+            None
+        }
+    }
+
+    /// Analyze an expression for escape information
+    /// `is_returned` indicates if this expression's result will be returned
+    fn analyze_expr_escapes(&self, expr: &Expr, analyzer: &mut EscapeAnalyzer, is_returned: bool) {
+        match &expr.kind {
+            ExprKind::Path(path) => {
+                if is_returned {
+                    if let Some(name) = Self::path_to_name(path) {
+                        analyzer.mark_returned(name);
+                    }
+                }
+            }
+            ExprKind::Return { value: Some(inner) } => {
+                // The returned value escapes
+                if let ExprKind::Path(ref path) = inner.kind {
+                    if let Some(name) = Self::path_to_name(path) {
+                        analyzer.mark_returned(name);
+                    }
+                }
+                self.analyze_expr_escapes(inner, analyzer, true);
+            }
+            ExprKind::Return { value: None } => {}
+            ExprKind::Call { func, args } => {
+                // Arguments passed to functions escape
+                for arg in args {
+                    if let ExprKind::Path(ref path) = arg.kind {
+                        if let Some(name) = Self::path_to_name(path) {
+                            analyzer.mark_passed(name);
+                        }
+                    }
+                    self.analyze_expr_escapes(arg, analyzer, false);
+                }
+                self.analyze_expr_escapes(func, analyzer, false);
+            }
+            ExprKind::MethodCall { receiver, args, .. } => {
+                // Method receiver and arguments may escape
+                if let ExprKind::Path(ref path) = receiver.kind {
+                    if let Some(name) = Self::path_to_name(path) {
+                        analyzer.mark_passed(name);
+                    }
+                }
+                self.analyze_expr_escapes(receiver, analyzer, false);
+                for arg in args {
+                    if let ExprKind::Path(ref path) = arg.kind {
+                        if let Some(name) = Self::path_to_name(path) {
+                            analyzer.mark_passed(name);
+                        }
+                    }
+                    self.analyze_expr_escapes(arg, analyzer, false);
+                }
+            }
+            ExprKind::Field { object, .. } => {
+                self.analyze_expr_escapes(object, analyzer, is_returned);
+            }
+            ExprKind::Index { object, index } => {
+                self.analyze_expr_escapes(object, analyzer, is_returned);
+                self.analyze_expr_escapes(index, analyzer, false);
+            }
+            ExprKind::Binary { left, right, .. } => {
+                self.analyze_expr_escapes(left, analyzer, false);
+                self.analyze_expr_escapes(right, analyzer, false);
+            }
+            ExprKind::Unary { operand, .. } => {
+                self.analyze_expr_escapes(operand, analyzer, is_returned);
+            }
+            ExprKind::If { condition, then_branch, else_branch } => {
+                self.analyze_expr_escapes(condition, analyzer, false);
+                self.analyze_block_escapes(then_branch, analyzer);
+                if let Some(else_expr) = else_branch {
+                    self.analyze_expr_escapes(else_expr, analyzer, is_returned);
+                }
+            }
+            ExprKind::Block(block) => {
+                self.analyze_block_escapes(block, analyzer);
+            }
+            ExprKind::While { condition, body, .. } => {
+                self.analyze_expr_escapes(condition, analyzer, false);
+                self.analyze_block_escapes(body, analyzer);
+            }
+            ExprKind::Loop { body, .. } => {
+                self.analyze_block_escapes(body, analyzer);
+            }
+            ExprKind::For { iterable, body, .. } => {
+                self.analyze_expr_escapes(iterable, analyzer, false);
+                self.analyze_block_escapes(body, analyzer);
+            }
+            ExprKind::Match { scrutinee, arms } => {
+                self.analyze_expr_escapes(scrutinee, analyzer, false);
+                for arm in arms {
+                    self.analyze_expr_escapes(&arm.body, analyzer, is_returned);
+                }
+            }
+            ExprKind::Assign { target, value } => {
+                // If storing into a container, mark as stored
+                if let ExprKind::Index { .. } = target.kind {
+                    if let ExprKind::Path(ref path) = value.kind {
+                        if let Some(name) = Self::path_to_name(path) {
+                            analyzer.mark_stored(name);
+                        }
+                    }
+                }
+                self.analyze_expr_escapes(target, analyzer, false);
+                self.analyze_expr_escapes(value, analyzer, false);
+            }
+            ExprKind::Struct { fields, .. } => {
+                // Values stored in struct fields may escape
+                for (_, field_expr) in fields {
+                    if let ExprKind::Path(ref path) = field_expr.kind {
+                        if let Some(name) = Self::path_to_name(path) {
+                            analyzer.mark_stored(name);
+                        }
+                    }
+                    self.analyze_expr_escapes(field_expr, analyzer, false);
+                }
+            }
+            ExprKind::Array(elements) => {
+                for elem in elements {
+                    if let ExprKind::Path(ref path) = elem.kind {
+                        if let Some(name) = Self::path_to_name(path) {
+                            analyzer.mark_stored(name);
+                        }
+                    }
+                    self.analyze_expr_escapes(elem, analyzer, false);
+                }
+            }
+            ExprKind::Tuple(elements) => {
+                for elem in elements {
+                    self.analyze_expr_escapes(elem, analyzer, is_returned);
+                }
+            }
+            ExprKind::Closure { body, .. } => {
+                // Closures capture variables - treat as stored
+                self.analyze_expr_escapes(body, analyzer, false);
+            }
+            // Literals and other simple expressions don't cause escapes
+            _ => {}
+        }
+    }
+
+    /// Check if a variable can skip RC operations based on escape analysis
+    fn can_elide_rc_for(&self, name: &str) -> bool {
+        self.escape_hints
+            .as_ref()
+            .map(|h| h.elide_rc.contains(name))
+            .unwrap_or(false)
+    }
+
+    /// Check if a variable can be stack-allocated based on escape analysis
+    fn can_stack_alloc_for(&self, name: &str) -> bool {
+        self.escape_hints
+            .as_ref()
+            .map(|h| h.stack_alloc.contains(name))
+            .unwrap_or(false)
     }
 
     // ============ Monomorphization Helpers ============
@@ -931,7 +1162,15 @@ impl Lowerer {
 
     /// Register a local variable for drop tracking
     fn register_local_for_drop(&mut self, name: &str, type_name: &str, span: crate::span::Span) {
-        let is_rc = self.is_rc_type_name(type_name);
+        let mut is_rc = self.is_rc_type_name(type_name);
+
+        // Use escape analysis to skip RC for variables that don't escape
+        if is_rc && self.can_elide_rc_for(name) {
+            // Variable doesn't escape, so we can skip reference counting
+            // The value will be dropped at end of scope without RC overhead
+            is_rc = false;
+        }
+
         self.drop_tracker.register(name.to_string(), type_name.to_string(), span, is_rc);
         self.var_type_names.insert(name.to_string(), type_name.to_string());
     }
@@ -1423,6 +1662,9 @@ impl Lowerer {
         self.local_types.clear();
         self.vreg_types.clear();
 
+        // Perform escape analysis for optimization hints
+        self.escape_hints = Some(self.analyze_function_escapes(f));
+
         // Convert parameter types (arrays are passed by pointer)
         let param_types: Vec<IrType> = f
             .params
@@ -1849,6 +2091,9 @@ impl Lowerer {
         self.locals.clear();
         self.local_types.clear();
         self.vreg_types.clear();
+
+        // Perform escape analysis for optimization hints
+        self.escape_hints = Some(self.analyze_function_escapes(f));
 
         // Set current module context for resolving unqualified calls
         self.current_module = Some(prefix.to_string());
@@ -12747,8 +12992,9 @@ impl Lowerer {
         // Then branch
         self.builder.start_block(then_block);
         let then_val = self.lower_block(then_branch).unwrap_or_else(|| self.builder.const_int(0));
+        let then_terminated = self.builder.is_terminated();
         let then_exit = self.builder.current_block_id().unwrap();
-        self.builder.br(merge_block);
+        self.builder.br(merge_block);  // Only adds br if not already terminated
 
         // Else branch
         self.builder.start_block(else_block);
@@ -12757,12 +13003,33 @@ impl Lowerer {
         } else {
             self.builder.const_int(0)
         };
+        let else_terminated = self.builder.is_terminated();
         let else_exit = self.builder.current_block_id().unwrap();
-        self.builder.br(merge_block);
+        self.builder.br(merge_block);  // Only adds br if not already terminated
 
-        // Merge block with phi
+        // Merge block with phi - only include branches that reach the merge
         self.builder.start_block(merge_block);
-        self.builder.phi(vec![(then_val, then_exit), (else_val, else_exit)])
+
+        // Build phi predecessors list, excluding terminated branches
+        let mut preds = Vec::new();
+        if !then_terminated {
+            preds.push((then_val, then_exit));
+        }
+        if !else_terminated {
+            preds.push((else_val, else_exit));
+        }
+
+        if preds.is_empty() {
+            // Both branches terminate (return/break/etc), merge is unreachable
+            self.builder.unreachable();
+            self.builder.const_int(0)
+        } else if preds.len() == 1 {
+            // Only one branch reaches merge, no phi needed
+            preds[0].0
+        } else {
+            // Both branches reach merge, need phi
+            self.builder.phi(preds)
+        }
     }
 
     /// Lower a while loop
