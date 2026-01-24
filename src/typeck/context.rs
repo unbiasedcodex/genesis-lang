@@ -1848,6 +1848,59 @@ impl TypeContext {
             },
         );
 
+        // ============ str (String Slice) Methods ============
+
+        // str::len(s) - get length of string literal
+        self.functions.insert(
+            "str::len".to_string(),
+            FnSig {
+                name: "str::len".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::str()],
+                ret: Ty::usize(),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // str::as_ptr(s) - get pointer to string data
+        self.functions.insert(
+            "str::as_ptr".to_string(),
+            FnSig {
+                name: "str::as_ptr".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::str()],
+                ret: Ty::raw_ptr(Ty::u8(), false),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // str::is_empty(s) - check if string is empty
+        self.functions.insert(
+            "str::is_empty".to_string(),
+            FnSig {
+                name: "str::is_empty".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::str()],
+                ret: Ty::bool(),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
         // ============ Integer Methods ============
 
         // i64::to_string(n) - convert integer to String
@@ -4952,12 +5005,25 @@ impl TypeContext {
 
     /// Find a specific method for a type (including trait methods)
     pub fn find_method(&self, ty: &Ty, method_name: &str) -> Option<&FnSig> {
+        // Get the type name for method lookup
         let type_name = match &ty.kind {
             TyKind::Named { name, .. } => name.clone(),
+            TyKind::Str => "str".to_string(),
+            TyKind::Int(int_ty) => format!("{:?}", int_ty).to_lowercase(),
+            TyKind::Uint(uint_ty) => format!("{:?}", uint_ty).to_lowercase(),
+            TyKind::Float(float_ty) => format!("{:?}", float_ty).to_lowercase(),
+            TyKind::Bool => "bool".to_string(),
+            TyKind::Char => "char".to_string(),
             _ => return None,
         };
 
-        // First, look in inherent impls (impl Type)
+        // First, look for built-in methods registered as functions (e.g., "str::len")
+        let builtin_method_name = format!("{}::{}", type_name, method_name);
+        if let Some(sig) = self.functions.get(&builtin_method_name) {
+            return Some(sig);
+        }
+
+        // Then, look in inherent impls (impl Type)
         for impl_def in &self.impls {
             if impl_def.self_type == type_name && impl_def.trait_name.is_none() {
                 if let Some(method) = impl_def.methods.iter().find(|m| m.name == method_name) {

@@ -1644,7 +1644,19 @@ impl<'ctx> LLVMCodegen<'ctx> {
                 let cond_val = self.get_vreg(*cond).into_int_value();
                 let then_bb = self.block_map[&then_block.0];
                 let else_bb = self.block_map[&else_block.0];
-                self.builder.build_conditional_branch(cond_val, then_bb, else_bb).unwrap();
+
+                // Ensure condition is i1 - truncate if it's a wider type
+                let bool_cond = if cond_val.get_type().get_bit_width() != 1 {
+                    self.builder.build_int_truncate(
+                        cond_val,
+                        self.context.bool_type(),
+                        "cond_trunc"
+                    ).unwrap()
+                } else {
+                    cond_val
+                };
+
+                self.builder.build_conditional_branch(bool_cond, then_bb, else_bb).unwrap();
             }
             Terminator::Switch { value, default, cases } => {
                 let val = self.get_vreg(*value).into_int_value();

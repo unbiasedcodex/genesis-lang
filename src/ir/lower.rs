@@ -99,6 +99,8 @@ pub struct Lowerer {
     current_impl_type: Option<String>,
     /// Global constants: const_name -> (global_ir_name, type)
     global_consts: HashMap<String, (String, IrType)>,
+    /// Constant values: const_name -> constant value (for compile-time evaluation)
+    const_values: HashMap<String, super::types::Constant>,
 
     // ============ Trait Objects ============
     /// Trait definitions: trait_name -> [method_names in order]
@@ -190,6 +192,7 @@ impl Lowerer {
             current_impl_type: None,
             // Global constants
             global_consts: HashMap::new(),
+            const_values: HashMap::new(),
             // Trait Objects
             trait_defs: HashMap::new(),
             trait_impls: HashMap::new(),
@@ -2037,13 +2040,16 @@ impl Lowerer {
         // Evaluate the constant expression to get initial value
         if let Some((init_val, ir_type)) = self.eval_const_expr(&c.value) {
             // Add global constant to module
-            self.builder.add_global(&global_name, ir_type.clone(), Some(init_val), true);
+            self.builder.add_global(&global_name, ir_type.clone(), Some(init_val.clone()), true);
 
             // Register the constant for lookup (both qualified and unqualified)
-            self.global_consts.insert(const_name, (global_name.clone(), ir_type.clone()));
+            self.global_consts.insert(const_name.clone(), (global_name.clone(), ir_type.clone()));
+            // Store the constant value for compile-time evaluation (e.g., inline asm immediates)
+            self.const_values.insert(const_name, init_val.clone());
             // Also register unqualified name for use within the same module
             if prefix.is_some() {
-                self.global_consts.insert(base_name, (global_name, ir_type));
+                self.global_consts.insert(base_name.clone(), (global_name, ir_type));
+                self.const_values.insert(base_name, init_val);
             }
         }
     }
@@ -2069,6 +2075,36 @@ impl Lowerer {
                     _ => None,
                 }
             }
+            // Handle constant references (e.g., TCP_E1000_REG_TDT)
+            ExprKind::Path(path) => {
+                // Build full path from segments
+                let full_path = path.segments.iter()
+                    .map(|s| s.ident.name.clone())
+                    .collect::<Vec<_>>()
+                    .join("::");
+
+                // Try full qualified path first, then simple name
+                let name = &path.segments[0].ident.name;
+                let const_val = self.const_values.get(&full_path).cloned()
+                    .or_else(|| self.const_values.get(name).cloned());
+
+                if let Some(cval) = const_val {
+                    // Determine the type from the constant value
+                    let ir_type = match &cval {
+                        super::types::Constant::Int(_) => IrType::I64,
+                        super::types::Constant::Float(_) => IrType::F64,
+                        super::types::Constant::Float32(_) => IrType::F32,
+                        super::types::Constant::Bool(_) => IrType::Bool,
+                        super::types::Constant::String(_) => IrType::ptr(IrType::I8),
+                        super::types::Constant::Null => IrType::I64, // Default pointer size
+                        super::types::Constant::Array(_) => IrType::I64, // Simplified
+                        super::types::Constant::Struct(_) => IrType::I64, // Simplified
+                    };
+                    Some((cval, ir_type))
+                } else {
+                    None
+                }
+            }
             _ => None, // Other expressions not supported as constants yet
         }
     }
@@ -2076,6 +2112,28 @@ impl Lowerer {
     /// Lower items inside a module recursively
     /// prefix is the qualified path to this module (e.g., "net" or "net::e1000")
     fn lower_module_items(&mut self, items: &[Item], prefix: &str) {
+        // Two-pass approach: First register all constants, then lower functions.
+        // This ensures constants are available when function bodies reference them.
+
+        // Pass 1: Register all constants (including from nested modules)
+        for item in items {
+            match item {
+                Item::Const(c) => {
+                    // Lower module constants with qualified name
+                    self.lower_const_def_with_prefix(c, Some(prefix));
+                }
+                Item::Mod(m) => {
+                    // Recursively register constants from nested modules first
+                    if let Some(ref nested_items) = m.items {
+                        let nested_prefix = format!("{}::{}", prefix, m.name.name);
+                        self.lower_module_constants(nested_items, &nested_prefix);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // Pass 2: Lower all function bodies (now that constants are registered)
         for item in items {
             match item {
                 Item::Function(f) => {
@@ -2083,20 +2141,54 @@ impl Lowerer {
                         self.lower_function_with_prefix(f, prefix);
                     }
                 }
-                Item::Const(c) => {
-                    // Lower module constants with qualified name
-                    self.lower_const_def_with_prefix(c, Some(prefix));
-                }
                 Item::Mod(m) => {
-                    // Recursively lower nested modules with extended prefix
+                    // Recursively lower functions from nested modules
                     if let Some(ref nested_items) = m.items {
                         let nested_prefix = format!("{}::{}", prefix, m.name.name);
-                        self.lower_module_items(nested_items, &nested_prefix);
+                        self.lower_module_functions(nested_items, &nested_prefix);
                     }
                 }
                 _ => {
                     // Other items not yet supported in modules
                 }
+            }
+        }
+    }
+
+    /// Register only constants from module items (pass 1)
+    fn lower_module_constants(&mut self, items: &[Item], prefix: &str) {
+        for item in items {
+            match item {
+                Item::Const(c) => {
+                    self.lower_const_def_with_prefix(c, Some(prefix));
+                }
+                Item::Mod(m) => {
+                    if let Some(ref nested_items) = m.items {
+                        let nested_prefix = format!("{}::{}", prefix, m.name.name);
+                        self.lower_module_constants(nested_items, &nested_prefix);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Lower only function bodies from module items (pass 2)
+    fn lower_module_functions(&mut self, items: &[Item], prefix: &str) {
+        for item in items {
+            match item {
+                Item::Function(f) => {
+                    if !self.is_generic_fn(f) {
+                        self.lower_function_with_prefix(f, prefix);
+                    }
+                }
+                Item::Mod(m) => {
+                    if let Some(ref nested_items) = m.items {
+                        let nested_prefix = format!("{}::{}", prefix, m.name.name);
+                        self.lower_module_functions(nested_items, &nested_prefix);
+                    }
+                }
+                _ => {}
             }
         }
     }
@@ -3036,6 +3128,17 @@ impl Lowerer {
                     return self.lower_string_concat_with(args);
                 }
 
+                // Handle str (string slice) functions
+                if func_name == "str::len" {
+                    return self.lower_str_len(args);
+                }
+                if func_name == "str::as_ptr" {
+                    return self.lower_str_as_ptr(args);
+                }
+                if func_name == "str::is_empty" {
+                    return self.lower_str_is_empty(args);
+                }
+
                 // Handle Option functions
                 if func_name == "Option::is_some" {
                     return self.lower_option_is_some(args);
@@ -3881,19 +3984,26 @@ impl Lowerer {
                 } else {
                     // Regular method call on concrete type
                     let type_name = receiver_ty.map(|ty| {
-                        if let crate::typeck::TyKind::Named { name, .. } = &ty.kind {
-                            // Resolve "Self" to the current impl type
-                            if name == "Self" {
-                                self.current_impl_type.clone().unwrap_or_else(|| name.clone())
-                            } else {
-                                name.clone()
+                        match &ty.kind {
+                            crate::typeck::TyKind::Named { name, .. } => {
+                                // Resolve "Self" to the current impl type
+                                if name == "Self" {
+                                    self.current_impl_type.clone().unwrap_or_else(|| name.clone())
+                                } else {
+                                    name.clone()
+                                }
                             }
-                        } else {
-                            "unknown".to_string()
+                            crate::typeck::TyKind::Str => "str".to_string(),
+                            crate::typeck::TyKind::Int(int_ty) => format!("{:?}", int_ty).to_lowercase(),
+                            crate::typeck::TyKind::Uint(uint_ty) => format!("{:?}", uint_ty).to_lowercase(),
+                            crate::typeck::TyKind::Float(float_ty) => format!("{:?}", float_ty).to_lowercase(),
+                            crate::typeck::TyKind::Bool => "bool".to_string(),
+                            crate::typeck::TyKind::Char => "char".to_string(),
+                            _ => "unknown".to_string()
                         }
                     }).unwrap_or_else(|| "unknown".to_string());
 
-                    // Construct qualified method name: "Counter::get_value"
+                    // Construct qualified method name: "Counter::get_value" or "str::len"
                     let qualified_method = format!("{}::{}", type_name, method.name);
 
                     // Lower the receiver - for user structs this gives us the struct pointer
@@ -4529,9 +4639,25 @@ impl Lowerer {
                             output_destinations.push(Some(slot));
                         }
                         AsmOperandKind::Const { expr } => {
-                            // Immediate constant
-                            let const_val = self.lower_expr(expr);
-                            inputs.push(const_val);
+                            // Immediate constant - must be evaluated at compile time
+                            // Try to evaluate as compile-time constant first
+                            if let Some((cval, _ir_type)) = self.eval_const_expr(expr) {
+                                // Use compile-time constant value
+                                let imm_val = match cval {
+                                    super::types::Constant::Int(n) => self.builder.const_int(n),
+                                    super::types::Constant::Bool(b) => self.builder.const_int(if b { 1 } else { 0 }),
+                                    _ => {
+                                        // Non-integer constants not supported for inline asm immediates
+                                        eprintln!("Warning: Non-integer constant in inline asm immediate, using 0");
+                                        self.builder.const_int(0)
+                                    }
+                                };
+                                inputs.push(imm_val);
+                            } else {
+                                // Fall back to runtime value (may not work for all "i" constraints)
+                                let const_val = self.lower_expr(expr);
+                                inputs.push(const_val);
+                            }
                             constraints_parts.push("i".to_string());
                         }
                         AsmOperandKind::Sym { path: _ } => {
@@ -4908,9 +5034,14 @@ impl Lowerer {
                     UnaryOp::Ref | UnaryOp::RefMut => IrType::Ptr(Box::new(self.infer_expr_type(operand))),
                 }
             }
-            ExprKind::Binary { left, .. } => {
-                // Use left operand's type for now
-                self.infer_expr_type(left)
+            ExprKind::Binary { op, left, .. } => {
+                // Comparison and logical operators return Bool
+                match op {
+                    BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Lt |
+                    BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge |
+                    BinaryOp::And | BinaryOp::Or => IrType::Bool,
+                    _ => self.infer_expr_type(left)
+                }
             }
             _ => IrType::I64, // Default
         }
@@ -8587,6 +8718,53 @@ impl Lowerer {
 
         self.vreg_types.insert(result_ptr, str_ty);
         result_ptr
+    }
+
+    // ============ str (string slice) methods ============
+
+    /// Lower str::len(s) - get length of string literal
+    /// For string literals, we can compute length at compile time
+    fn lower_str_len(&mut self, args: &[Expr]) -> VReg {
+        if args.is_empty() {
+            return self.builder.const_int(0);
+        }
+
+        // If the argument is a string literal, we know the length at compile time
+        if let ExprKind::Literal(Literal::String(s)) = &args[0].kind {
+            return self.builder.const_int(s.len() as i64);
+        }
+
+        // For non-literal str, the pointer doesn't carry length information
+        // We need to compute strlen at runtime, but for simplicity just return 0
+        // In a full implementation, str would be a fat pointer with length
+        self.builder.const_int(0)
+    }
+
+    /// Lower str::as_ptr(s) - get pointer to string data
+    fn lower_str_as_ptr(&mut self, args: &[Expr]) -> VReg {
+        if args.is_empty() {
+            return self.builder.const_null();
+        }
+
+        // For string literals, this returns the pointer to the global string data
+        self.lower_expr(&args[0])
+    }
+
+    /// Lower str::is_empty(s) - check if string is empty
+    fn lower_str_is_empty(&mut self, args: &[Expr]) -> VReg {
+        if args.is_empty() {
+            return self.builder.const_bool(true);
+        }
+
+        // If the argument is a string literal, we know at compile time
+        if let ExprKind::Literal(Literal::String(s)) = &args[0].kind {
+            return self.builder.const_bool(s.is_empty());
+        }
+
+        // For non-literal, compare length to 0
+        let len = self.lower_str_len(args);
+        let zero = self.builder.const_int(0);
+        self.builder.icmp(super::instr::CmpOp::Eq, len, zero)
     }
 
     // Helper: Create Option::Some with a constant i64 value
@@ -12931,46 +13109,58 @@ impl Lowerer {
                 self.builder.srem(left, right)
             }
             BinaryOp::Eq => {
-                if is_float {
+                let result = if is_float {
                     self.builder.fcmp(CmpOp::Eq, left, right)
                 } else {
                     self.builder.icmp(CmpOp::Eq, left, right)
-                }
+                };
+                self.vreg_types.insert(result, IrType::Bool);
+                result
             }
             BinaryOp::Ne => {
-                if is_float {
+                let result = if is_float {
                     self.builder.fcmp(CmpOp::Ne, left, right)
                 } else {
                     self.builder.icmp(CmpOp::Ne, left, right)
-                }
+                };
+                self.vreg_types.insert(result, IrType::Bool);
+                result
             }
             BinaryOp::Lt => {
-                if is_float {
+                let result = if is_float {
                     self.builder.fcmp(CmpOp::Slt, left, right)
                 } else {
                     self.builder.icmp(CmpOp::Slt, left, right)
-                }
+                };
+                self.vreg_types.insert(result, IrType::Bool);
+                result
             }
             BinaryOp::Le => {
-                if is_float {
+                let result = if is_float {
                     self.builder.fcmp(CmpOp::Sle, left, right)
                 } else {
                     self.builder.icmp(CmpOp::Sle, left, right)
-                }
+                };
+                self.vreg_types.insert(result, IrType::Bool);
+                result
             }
             BinaryOp::Gt => {
-                if is_float {
+                let result = if is_float {
                     self.builder.fcmp(CmpOp::Sgt, left, right)
                 } else {
                     self.builder.icmp(CmpOp::Sgt, left, right)
-                }
+                };
+                self.vreg_types.insert(result, IrType::Bool);
+                result
             }
             BinaryOp::Ge => {
-                if is_float {
+                let result = if is_float {
                     self.builder.fcmp(CmpOp::Sge, left, right)
                 } else {
                     self.builder.icmp(CmpOp::Sge, left, right)
-                }
+                };
+                self.vreg_types.insert(result, IrType::Bool);
+                result
             }
             BinaryOp::And => self.builder.and(left, right),
             BinaryOp::Or => self.builder.or(left, right),
