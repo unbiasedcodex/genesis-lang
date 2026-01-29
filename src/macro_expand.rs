@@ -824,6 +824,36 @@ impl MacroExpander {
                         return false;
                     }
                 }
+
+                MacroToken::ByteCharLit(pat_val, _) => {
+                    if *input_idx >= input.len() {
+                        return false;
+                    }
+                    if let MacroToken::ByteCharLit(input_val, _) = &input[*input_idx] {
+                        if pat_val != input_val {
+                            return false;
+                        }
+                        *input_idx += 1;
+                        pattern_idx += 1;
+                    } else {
+                        return false;
+                    }
+                }
+
+                MacroToken::ByteStrLit(pat_val, _) => {
+                    if *input_idx >= input.len() {
+                        return false;
+                    }
+                    if let MacroToken::ByteStrLit(input_val, _) = &input[*input_idx] {
+                        if pat_val != input_val {
+                            return false;
+                        }
+                        *input_idx += 1;
+                        pattern_idx += 1;
+                    } else {
+                        return false;
+                    }
+                }
             }
         }
 
@@ -862,7 +892,9 @@ impl MacroExpander {
                     MacroToken::IntLit(_, _) |
                     MacroToken::FloatLit(_, _) |
                     MacroToken::StrLit(_, _) |
-                    MacroToken::CharLit(_, _) => {
+                    MacroToken::ByteStrLit(_, _) |
+                    MacroToken::CharLit(_, _) |
+                    MacroToken::ByteCharLit(_, _) => {
                         let token = input[*idx].clone();
                         *idx += 1;
                         vec![token]
@@ -871,7 +903,8 @@ impl MacroExpander {
                         match kind {
                             TokenKind::True | TokenKind::False |
                             TokenKind::IntLiteral | TokenKind::FloatLiteral |
-                            TokenKind::StringLiteral | TokenKind::CharLiteral => {
+                            TokenKind::StringLiteral | TokenKind::ByteStringLiteral |
+                            TokenKind::CharLiteral | TokenKind::ByteCharLiteral => {
                                 let token = input[*idx].clone();
                                 *idx += 1;
                                 vec![token]
@@ -1022,7 +1055,9 @@ impl MacroExpander {
             MacroToken::IntLit(_, _) |
             MacroToken::FloatLit(_, _) |
             MacroToken::StrLit(_, _) |
-            MacroToken::CharLit(_, _) => {
+            MacroToken::ByteStrLit(_, _) |
+            MacroToken::CharLit(_, _) |
+            MacroToken::ByteCharLit(_, _) => {
                 result.push(input[*idx].clone());
                 *idx += 1;
 
@@ -1552,7 +1587,9 @@ impl MacroExpander {
             (MacroToken::IntLit(pv, _), MacroToken::IntLit(iv, _)) => pv == iv,
             (MacroToken::FloatLit(pv, _), MacroToken::FloatLit(iv, _)) => (pv - iv).abs() < f64::EPSILON,
             (MacroToken::StrLit(pv, _), MacroToken::StrLit(iv, _)) => pv == iv,
+            (MacroToken::ByteStrLit(pv, _), MacroToken::ByteStrLit(iv, _)) => pv == iv,
             (MacroToken::CharLit(pv, _), MacroToken::CharLit(iv, _)) => pv == iv,
+            (MacroToken::ByteCharLit(pv, _), MacroToken::ByteCharLit(iv, _)) => pv == iv,
             _ => false,
         }
     }
@@ -1728,7 +1765,8 @@ impl MacroExpander {
 
                 MacroToken::Token(_, _) |
                 MacroToken::IntLit(_, _) | MacroToken::FloatLit(_, _) |
-                MacroToken::StrLit(_, _) | MacroToken::CharLit(_, _) => {
+                MacroToken::StrLit(_, _) | MacroToken::ByteStrLit(_, _) |
+                MacroToken::CharLit(_, _) | MacroToken::ByteCharLit(_, _) => {
                     result.push(token.clone());
                 }
             }
@@ -1800,6 +1838,12 @@ pub fn tokens_to_expr(tokens: &[MacroToken], _span: Span) -> Option<Expr> {
                     span: *s,
                 });
             }
+            MacroToken::ByteCharLit(b, s) => {
+                return Some(Expr {
+                    kind: ExprKind::Literal(crate::ast::Literal::ByteChar(*b)),
+                    span: *s,
+                });
+            }
             MacroToken::Token(TokenKind::True, s) => {
                 return Some(Expr {
                     kind: ExprKind::Literal(crate::ast::Literal::Bool(true)),
@@ -1855,6 +1899,23 @@ fn token_to_string(token: &MacroToken) -> String {
         MacroToken::FloatLit(f, _) => f.to_string(),
         MacroToken::StrLit(s, _) => format!("\"{}\"", s),
         MacroToken::CharLit(c, _) => format!("'{}'", c),
+        MacroToken::ByteCharLit(b, _) => {
+            if *b >= 0x20 && *b < 0x7F {
+                format!("b'{}'", *b as char)
+            } else {
+                format!("b'\\x{:02x}'", b)
+            }
+        }
+        MacroToken::ByteStrLit(bytes, _) => {
+            let escaped: String = bytes.iter().map(|b| {
+                if *b >= 0x20 && *b < 0x7F {
+                    format!("{}", *b as char)
+                } else {
+                    format!("\\x{:02x}", b)
+                }
+            }).collect();
+            format!("b\"{}\"", escaped)
+        }
         MacroToken::Capture { name, .. } => format!("${}", name),
         MacroToken::Repetition { .. } => String::new(), // Should be expanded
         MacroToken::Group { delimiter, tokens, .. } => {
@@ -1874,7 +1935,9 @@ fn token_kind_to_string(kind: &TokenKind) -> String {
         TokenKind::IntLiteral => "<int>".to_string(),
         TokenKind::FloatLiteral => "<float>".to_string(),
         TokenKind::StringLiteral => "<string>".to_string(),
+        TokenKind::ByteStringLiteral => "<bytestring>".to_string(),
         TokenKind::CharLiteral => "<char>".to_string(),
+        TokenKind::ByteCharLiteral => "<bytechar>".to_string(),
         TokenKind::Label => "<label>".to_string(),
         TokenKind::True => "true".to_string(),
         TokenKind::False => "false".to_string(),
@@ -1949,6 +2012,7 @@ fn token_kind_to_string(kind: &TokenKind) -> String {
         // Core keywords
         TokenKind::Let => "let".to_string(),
         TokenKind::Mut => "mut".to_string(),
+        TokenKind::Ref => "ref".to_string(),
         TokenKind::Const => "const".to_string(),
         TokenKind::Fn => "fn".to_string(),
         TokenKind::If => "if".to_string(),

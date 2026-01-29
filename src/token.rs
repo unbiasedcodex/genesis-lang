@@ -31,11 +31,11 @@ impl Token {
 pub enum TokenKind {
     // ============ Literals ============
 
-    /// Integer literal: 42, 0xFF, 0b1010, 0o77
-    #[regex(r"[0-9][0-9_]*", priority = 2)]
-    #[regex(r"0[xX][0-9a-fA-F][0-9a-fA-F_]*")]
-    #[regex(r"0[bB][01][01_]*")]
-    #[regex(r"0[oO][0-7][0-7_]*")]
+    /// Integer literal: 42, 0xFF, 0b1010, 0o77, with optional type suffix (1u32, 10i64)
+    #[regex(r"[0-9][0-9_]*(i8|i16|i32|i64|i128|u8|u16|u32|u64|u128|isize|usize)?", priority = 3)]
+    #[regex(r"0[xX][0-9a-fA-F][0-9a-fA-F_]*(i8|i16|i32|i64|i128|u8|u16|u32|u64|u128|isize|usize)?")]
+    #[regex(r"0[bB][01][01_]*(i8|i16|i32|i64|i128|u8|u16|u32|u64|u128|isize|usize)?")]
+    #[regex(r"0[oO][0-7][0-7_]*(i8|i16|i32|i64|i128|u8|u16|u32|u64|u128|isize|usize)?")]
     IntLiteral,
 
     /// Float literal: 3.14, 1e10, 2.5e-3
@@ -47,9 +47,17 @@ pub enum TokenKind {
     #[regex(r#""([^"\\]|\\.)*""#)]
     StringLiteral,
 
+    /// Byte string literal: b"hello", b"\x00\x01"
+    #[regex(r#"b"([^"\\]|\\.)*""#)]
+    ByteStringLiteral,
+
     /// Character literal: 'a', '\n'
     #[regex(r"'([^'\\]|\\.)'")]
     CharLiteral,
+
+    /// Byte character literal: b'a', b'\n'
+    #[regex(r"b'([^'\\]|\\.)'")]
+    ByteCharLiteral,
 
     /// Label/Lifetime: 'outer, 'loop1 (used for labeled loops)
     #[regex(r"'[a-zA-Z_][a-zA-Z0-9_]*")]
@@ -69,6 +77,8 @@ pub enum TokenKind {
     Let,
     #[token("mut")]
     Mut,
+    #[token("ref")]
+    Ref,
     #[token("const")]
     Const,
     #[token("if")]
@@ -327,6 +337,7 @@ impl TokenKind {
             TokenKind::Fn
                 | TokenKind::Let
                 | TokenKind::Mut
+                | TokenKind::Ref
                 | TokenKind::Const
                 | TokenKind::If
                 | TokenKind::Else
@@ -376,7 +387,9 @@ impl TokenKind {
             TokenKind::IntLiteral
                 | TokenKind::FloatLiteral
                 | TokenKind::StringLiteral
+                | TokenKind::ByteStringLiteral
                 | TokenKind::CharLiteral
+                | TokenKind::ByteCharLiteral
                 | TokenKind::True
                 | TokenKind::False
         )
@@ -438,13 +451,16 @@ impl fmt::Display for TokenKind {
             TokenKind::IntLiteral => "integer",
             TokenKind::FloatLiteral => "float",
             TokenKind::StringLiteral => "string",
+            TokenKind::ByteStringLiteral => "byte string",
             TokenKind::CharLiteral => "char",
+            TokenKind::ByteCharLiteral => "byte char",
             TokenKind::Label => "label",
             TokenKind::True => "true",
             TokenKind::False => "false",
             TokenKind::Fn => "fn",
             TokenKind::Let => "let",
             TokenKind::Mut => "mut",
+            TokenKind::Ref => "ref",
             TokenKind::Const => "const",
             TokenKind::If => "if",
             TokenKind::Else => "else",

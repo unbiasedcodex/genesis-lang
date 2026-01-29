@@ -103,6 +103,8 @@ pub struct StructDef {
     pub is_pub: bool,
     /// Layout attributes: #[repr(C)], #[repr(packed)], #[repr(align(N))]
     pub repr: Option<ReprAttr>,
+    /// Derive attributes: #[derive(Clone, Debug, ...)]
+    pub derive: Option<DeriveAttr>,
     pub span: Span,
 }
 
@@ -122,6 +124,8 @@ pub struct EnumDef {
     pub generics: Option<Generics>,
     pub variants: Vec<Variant>,
     pub is_pub: bool,
+    /// Derive attributes: #[derive(Clone, Debug, ...)]
+    pub derive: Option<DeriveAttr>,
     pub span: Span,
 }
 
@@ -245,9 +249,24 @@ pub struct MessageHandler {
 }
 
 /// Use declaration
+/// Supports both simple imports: `use module::item`
+/// and grouped imports: `use module::{item1, item2}`
 #[derive(Debug, Clone)]
 pub struct UseDef {
+    /// The base path (for grouped imports, this is the common prefix)
     pub path: Path,
+    /// Optional alias: `use module::item as alias`
+    pub alias: Option<Ident>,
+    /// For grouped imports: `use module::{A, B, C}` - contains the names in braces
+    /// None for simple imports, Some(vec) for grouped imports
+    pub group: Option<Vec<UseGroupItem>>,
+    pub span: Span,
+}
+
+/// An item in a grouped use statement
+#[derive(Debug, Clone)]
+pub struct UseGroupItem {
+    pub name: Ident,
     pub alias: Option<Ident>,
     pub span: Span,
 }
@@ -318,8 +337,14 @@ pub enum MacroToken {
     /// String literal with value
     StrLit(String, Span),
 
+    /// Byte string literal with value
+    ByteStrLit(Vec<u8>, Span),
+
     /// Char literal with value
     CharLit(char, Span),
+
+    /// Byte char literal with value
+    ByteCharLit(u8, Span),
 
     /// Captured variable: $name:kind
     Capture {
@@ -400,6 +425,19 @@ pub struct ReprAttr {
     pub packed: bool,
     /// Custom alignment in bytes (must be power of 2)
     pub align: Option<u64>,
+}
+
+/// Derive attribute for automatic trait implementations
+/// #[derive(Clone, Debug, PartialEq, ...)]
+#[derive(Debug, Clone, Default)]
+pub struct DeriveAttr {
+    pub traits: Vec<String>,
+}
+
+impl DeriveAttr {
+    pub fn has(&self, trait_name: &str) -> bool {
+        self.traits.iter().any(|t| t == trait_name)
+    }
 }
 
 // ============ Inline Assembly ============
@@ -576,6 +614,7 @@ pub enum ExprKind {
     MethodCall {
         receiver: Box<Expr>,
         method: Ident,
+        type_args: Option<Vec<Type>>,
         args: Vec<Expr>,
     },
 
@@ -613,6 +652,14 @@ pub enum ExprKind {
         else_branch: Option<Box<Expr>>,
     },
 
+    /// If-let expression: `if let pattern = expr { ... } else { ... }`
+    IfLet {
+        pattern: Pattern,
+        expr: Box<Expr>,
+        then_branch: Block,
+        else_branch: Option<Box<Expr>>,
+    },
+
     /// Match expression: `match x { ... }`
     Match {
         scrutinee: Box<Expr>,
@@ -625,6 +672,14 @@ pub enum ExprKind {
     /// While loop: `while cond { ... }`
     While {
         condition: Box<Expr>,
+        body: Block,
+        label: Option<Ident>,
+    },
+
+    /// While-let loop: `while let pattern = expr { ... }`
+    WhileLet {
+        pattern: Pattern,
+        expr: Box<Expr>,
         body: Block,
         label: Option<Ident>,
     },
@@ -916,7 +971,9 @@ pub enum Literal {
     Int(i128),
     Float(f64),
     String(String),
+    ByteString(Vec<u8>),
     Char(char),
+    ByteChar(u8),
     Bool(bool),
 }
 
