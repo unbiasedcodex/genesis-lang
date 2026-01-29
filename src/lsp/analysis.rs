@@ -329,7 +329,7 @@ fn visit_expr(expr: &Expr, references: &mut HashMap<Span, String>) {
                 visit_expr(arg, references);
             }
         }
-        ExprKind::MethodCall { receiver, method: _, args } => {
+        ExprKind::MethodCall { receiver, method: _, type_args: _, args } => {
             visit_expr(receiver, references);
             for arg in args {
                 visit_expr(arg, references);

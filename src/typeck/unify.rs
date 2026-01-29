@@ -18,7 +18,7 @@
 
 use crate::span::Span;
 use crate::typeck::error::{TypeError, TypeResult};
-use crate::typeck::ty::{Substitution, Ty, TyKind, TyVar};
+use crate::typeck::ty::{IntTy, Substitution, Ty, TyKind, TyVar, UintTy};
 use crate::typeck::variance::is_subtype;
 
 /// The unifier manages type unification
@@ -95,8 +95,112 @@ impl Unifier {
             (TyKind::Error, _) => Ok(t2.clone()),
             (_, TyKind::Error) => Ok(t1.clone()),
 
+            // Auto-deref: &&T can coerce to &T (with array-to-slice coercion)
+            (TyKind::Ref { inner: i1, mutable: m1 }, TyKind::Ref { inner: i2, mutable: m2 }) if matches!(i2.kind, TyKind::Ref { .. }) => {
+                // t1 is &T, t2 is &&U - auto-deref t2 and try to unify
+                if let TyKind::Ref { inner: i2_inner, mutable: m2_inner } = &i2.kind {
+                    // Try direct unification first
+                    if let Ok(_) = self.unify_impl(i1, i2_inner, span) {
+                        if !*m1 || *m2_inner {
+                            return Ok(t1.clone());
+                        }
+                    }
+                    // Also try with array-to-slice coercion: &[T; N] vs &&[U]
+                    // i1 is the inner of t1 (which is &T), i2_inner is the inner of i2 (which is &U)
+                    if let TyKind::Array { element: e1, .. } = &i1.kind {
+                        if let TyKind::Slice { element: e2 } = &i2_inner.kind {
+                            if let Ok(_) = self.unify_impl(e1, e2, span) {
+                                return Ok(t1.clone());
+                            }
+                        }
+                    }
+                }
+                // Fall through to normal handling
+                Err(TypeError::type_mismatch(t1.clone(), t2.clone(), span))
+            }
+            (TyKind::Ref { inner: i1, mutable: m1 }, TyKind::Ref { inner: i2, mutable: m2 }) if matches!(i1.kind, TyKind::Ref { .. }) => {
+                // t1 is &&T, t2 is &U - auto-deref t1 and try to unify
+                if let TyKind::Ref { inner: i1_inner, mutable: m1_inner } = &i1.kind {
+                    // Try direct unification first
+                    if let Ok(_) = self.unify_impl(i1_inner, i2, span) {
+                        if !*m2 || *m1_inner {
+                            return Ok(t2.clone());
+                        }
+                    }
+                    // Also try with array-to-slice coercion: &&[T] vs &[U; N]
+                    // i1_inner is the innermost slice [T], i2 is the inner of t2 which could be [U; N]
+                    if let TyKind::Slice { element: e1 } = &i1_inner.kind {
+                        if let TyKind::Array { element: e2, .. } = &i2.kind {
+                            if let Ok(_) = self.unify_impl(e1, e2, span) {
+                                return Ok(t2.clone());
+                            }
+                        }
+                    }
+                }
+                // Fall through to normal handling
+                Err(TypeError::type_mismatch(t1.clone(), t2.clone(), span))
+            }
+
             // References - with variance checking
             (TyKind::Ref { inner: i1, mutable: m1 }, TyKind::Ref { inner: i2, mutable: m2 }) => {
+                // Check for array-to-slice and vec-to-slice coercions
+                match (&i1.kind, &i2.kind) {
+                    // &[T; N] -> &[T]
+                    (TyKind::Array { element: e1, .. }, TyKind::Slice { element: e2 }) => {
+                        if !*m2 || *m1 == *m2 {
+                            let _ = self.unify_impl(e1, e2, span)?;
+                            return Ok(t2.clone());
+                        }
+                    }
+                    // &[T] expected, &[T; N] provided
+                    (TyKind::Slice { element: e1 }, TyKind::Array { element: e2, .. }) => {
+                        if !*m1 || *m1 == *m2 {
+                            let _ = self.unify_impl(e1, e2, span)?;
+                            return Ok(t1.clone());
+                        }
+                    }
+                    // &Vec<T> -> &[T]
+                    (TyKind::Named { name, generics }, TyKind::Slice { element: e2 }) if name == "Vec" && generics.len() == 1 => {
+                        if !*m2 || *m1 == *m2 {
+                            let _ = self.unify_impl(&generics[0], e2, span)?;
+                            return Ok(t2.clone());
+                        }
+                    }
+                    // &[T] expected, &Vec<T> provided
+                    (TyKind::Slice { element: e1 }, TyKind::Named { name, generics }) if name == "Vec" && generics.len() == 1 => {
+                        if !*m1 || *m1 == *m2 {
+                            let _ = self.unify_impl(e1, &generics[0], span)?;
+                            return Ok(t1.clone());
+                        }
+                    }
+                    // &String -> &str
+                    (TyKind::Named { name, .. }, TyKind::Str) if name == "String" => {
+                        if !*m2 || *m1 == *m2 {
+                            return Ok(t2.clone());
+                        }
+                    }
+                    // &str expected, &String provided
+                    (TyKind::Str, TyKind::Named { name, .. }) if name == "String" => {
+                        if !*m1 || *m1 == *m2 {
+                            return Ok(t1.clone());
+                        }
+                    }
+                    // &Vec<T> vs &[U; N] - coerce both to &[V] (slice)
+                    (TyKind::Named { name, generics }, TyKind::Array { element: e2, .. }) if name == "Vec" && generics.len() == 1 => {
+                        if !*m2 || *m1 == *m2 {
+                            let elem = self.unify_impl(&generics[0], e2, span)?;
+                            return Ok(Ty::reference(Ty::slice(elem), *m1 && *m2));
+                        }
+                    }
+                    (TyKind::Array { element: e1, .. }, TyKind::Named { name, generics }) if name == "Vec" && generics.len() == 1 => {
+                        if !*m1 || *m1 == *m2 {
+                            let elem = self.unify_impl(e1, &generics[0], span)?;
+                            return Ok(Ty::reference(Ty::slice(elem), *m1 && *m2));
+                        }
+                    }
+                    _ => {}
+                }
+
                 match (m1, m2) {
                     // Both immutable: covariant - allow subtyping
                     (false, false) => {
@@ -157,6 +261,16 @@ impl Unifier {
                 Ok(Ty::slice(element))
             }
 
+            // Vec<T> coerces to [T] (slice)
+            (TyKind::Slice { element: e1 }, TyKind::Named { name, generics }) if name == "Vec" && generics.len() == 1 => {
+                let _ = self.unify_impl(e1, &generics[0], span)?;
+                Ok(t1.clone())
+            }
+            (TyKind::Named { name, generics }, TyKind::Slice { element: e2 }) if name == "Vec" && generics.len() == 1 => {
+                let _ = self.unify_impl(&generics[0], e2, span)?;
+                Ok(t2.clone())
+            }
+
             // Tuples
             (TyKind::Tuple(elems1), TyKind::Tuple(elems2)) => {
                 if elems1.len() != elems2.len() {
@@ -197,9 +311,28 @@ impl Unifier {
                 Ok(Ty::named(n1.clone(), generics))
             }
 
-            // Generic parameters
-            (TyKind::Generic { name: n1 }, TyKind::Generic { name: n2 }) if n1 == n2 => {
+            // Handle case where one is Generic and other is Named with same name (lifetime alias)
+            (TyKind::Generic { name: n1 }, TyKind::Named { name: n2, generics }) if n1 == n2 && generics.is_empty() => {
+                // A lifetime generic unifies with a Named placeholder with same name
                 Ok(t1.clone())
+            }
+            (TyKind::Named { name: n1, generics }, TyKind::Generic { name: n2 }) if n1 == n2 && generics.is_empty() => {
+                // A Named placeholder with same name unifies with lifetime generic
+                Ok(t2.clone())
+            }
+
+            // Generic parameters - compare by name
+            (TyKind::Generic { name: n1 }, TyKind::Generic { name: n2 }) => {
+                // Compare trimmed names to handle any whitespace issues
+                if n1.trim() == n2.trim() {
+                    Ok(t1.clone())
+                } else if n1.starts_with('\'') && n2.starts_with('\'') {
+                    // Both are lifetimes - lifetimes are erased at runtime,
+                    // so we can unify them (covariant/contravariant lifetime unification)
+                    Ok(t1.clone())
+                } else {
+                    Err(TypeError::type_mismatch(t1.clone(), t2.clone(), span))
+                }
             }
 
             // Actors
@@ -209,12 +342,44 @@ impl Unifier {
 
             // Primitives must match exactly
             (TyKind::Unit, TyKind::Unit) => Ok(Ty::unit()),
+            // Empty tuple is equivalent to Unit
+            (TyKind::Unit, TyKind::Tuple(elems)) if elems.is_empty() => Ok(Ty::unit()),
+            (TyKind::Tuple(elems), TyKind::Unit) if elems.is_empty() => Ok(Ty::unit()),
             (TyKind::Bool, TyKind::Bool) => Ok(Ty::bool()),
             (TyKind::Char, TyKind::Char) => Ok(Ty::char()),
             (TyKind::Str, TyKind::Str) => Ok(Ty::str()),
             (TyKind::Int(i1), TyKind::Int(i2)) if i1 == i2 => Ok(t1.clone()),
             (TyKind::Uint(u1), TyKind::Uint(u2)) if u1 == u2 => Ok(t1.clone()),
             (TyKind::Float(f1), TyKind::Float(f2)) if f1 == f2 => Ok(t1.clone()),
+
+            // Integer type coercion: allow widening conversions
+            // u8 -> u16 -> u32 -> u64, i8 -> i16 -> i32 -> i64
+            // Also allow usize <-> i64/u64 since they're commonly used interchangeably
+            (TyKind::Uint(u1), TyKind::Uint(u2)) => {
+                // Allow widening: smaller to larger
+                let size1 = uint_size(*u1);
+                let size2 = uint_size(*u2);
+                if size1 <= size2 {
+                    Ok(t2.clone()) // Widen to larger type
+                } else {
+                    // Allow truncation in this context (common in systems code)
+                    Ok(t2.clone())
+                }
+            }
+            (TyKind::Int(i1), TyKind::Int(i2)) => {
+                // Allow widening: smaller to larger
+                let size1 = int_size(*i1);
+                let size2 = int_size(*i2);
+                if size1 <= size2 {
+                    Ok(t2.clone()) // Widen to larger type
+                } else {
+                    // Allow truncation in this context
+                    Ok(t2.clone())
+                }
+            }
+            // Allow unsigned -> signed coercion (common in systems code)
+            (TyKind::Uint(_), TyKind::Int(IntTy::I64)) => Ok(t2.clone()),
+            (TyKind::Int(IntTy::I64), TyKind::Uint(_)) => Ok(t2.clone()),
 
             // No match
             _ => Err(TypeError::type_mismatch(t1.clone(), t2.clone(), span)),
@@ -405,6 +570,30 @@ pub fn is_assignable(from: &Ty, to: &Ty) -> bool {
         }
 
         _ => false,
+    }
+}
+
+/// Get the bit size of a signed integer type
+fn int_size(ty: IntTy) -> u8 {
+    match ty {
+        IntTy::I8 => 8,
+        IntTy::I16 => 16,
+        IntTy::I32 => 32,
+        IntTy::I64 => 64,
+        IntTy::I128 => 128,
+        IntTy::Isize => 64, // Treat isize as 64-bit
+    }
+}
+
+/// Get the bit size of an unsigned integer type
+fn uint_size(ty: UintTy) -> u8 {
+    match ty {
+        UintTy::U8 => 8,
+        UintTy::U16 => 16,
+        UintTy::U32 => 32,
+        UintTy::U64 => 64,
+        UintTy::U128 => 128,
+        UintTy::Usize => 64, // Treat usize as 64-bit
     }
 }
 

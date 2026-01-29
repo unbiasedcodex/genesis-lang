@@ -36,6 +36,28 @@ pub struct TypeContext {
     current_module: Option<String>,
     /// Macro definitions
     macros: HashMap<String, MacroDefInfo>,
+    /// Built-in slice/array .len() method signature
+    builtin_slice_len: Option<FnSig>,
+    /// Built-in slice/array .is_empty() method signature
+    builtin_slice_is_empty: Option<FnSig>,
+    /// Built-in str .len() method signature
+    builtin_str_len: Option<FnSig>,
+    /// Built-in str .is_empty() method signature
+    builtin_str_is_empty: Option<FnSig>,
+    /// Built-in str .as_bytes() method signature
+    builtin_str_as_bytes: Option<FnSig>,
+    /// Built-in str .chars() method signature
+    builtin_str_chars: Option<FnSig>,
+    /// Built-in str .trim() method signature
+    builtin_str_trim: Option<FnSig>,
+    /// Built-in str .to_lowercase() method signature
+    builtin_str_to_lowercase: Option<FnSig>,
+    /// Built-in str .ends_with() method signature
+    builtin_str_ends_with: Option<FnSig>,
+    /// Built-in str .starts_with() method signature
+    builtin_str_starts_with: Option<FnSig>,
+    /// Built-in str .split_whitespace() method signature
+    builtin_str_split_whitespace: Option<FnSig>,
 }
 
 /// A module definition
@@ -87,6 +109,141 @@ impl TypeContext {
             imports: HashMap::new(),
             current_module: None,
             macros: HashMap::new(),
+            // Built-in slice methods
+            builtin_slice_len: Some(FnSig {
+                name: "len".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::reference(Ty::slice(Ty::u8()), false)], // &[u8] as example
+                ret: Ty::usize(),
+                is_method: true,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            }),
+            builtin_slice_is_empty: Some(FnSig {
+                name: "is_empty".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::reference(Ty::slice(Ty::u8()), false)],
+                ret: Ty::bool(),
+                is_method: true,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            }),
+            // Built-in str methods
+            builtin_str_len: Some(FnSig {
+                name: "len".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::reference(Ty::str(), false)],
+                ret: Ty::usize(),
+                is_method: true,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            }),
+            builtin_str_is_empty: Some(FnSig {
+                name: "is_empty".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::reference(Ty::str(), false)],
+                ret: Ty::bool(),
+                is_method: true,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            }),
+            builtin_str_as_bytes: Some(FnSig {
+                name: "as_bytes".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::reference(Ty::str(), false)],
+                ret: Ty::reference(Ty::slice(Ty::u8()), false),
+                is_method: true,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            }),
+            builtin_str_chars: Some(FnSig {
+                name: "chars".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::reference(Ty::str(), false)],
+                ret: Ty::named("Chars".to_string(), vec![]),
+                is_method: true,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            }),
+            builtin_str_trim: Some(FnSig {
+                name: "trim".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::reference(Ty::str(), false)],
+                ret: Ty::reference(Ty::str(), false),
+                is_method: true,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            }),
+            builtin_str_to_lowercase: Some(FnSig {
+                name: "to_lowercase".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::reference(Ty::str(), false)],
+                ret: Ty::named("String".to_string(), vec![]),
+                is_method: true,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            }),
+            builtin_str_ends_with: Some(FnSig {
+                name: "ends_with".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::reference(Ty::str(), false), Ty::reference(Ty::str(), false)],
+                ret: Ty::bool(),
+                is_method: true,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            }),
+            builtin_str_starts_with: Some(FnSig {
+                name: "starts_with".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::reference(Ty::str(), false), Ty::reference(Ty::str(), false)],
+                ret: Ty::bool(),
+                is_method: true,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            }),
+            builtin_str_split_whitespace: Some(FnSig {
+                name: "split_whitespace".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::reference(Ty::str(), false)],
+                // Returns an iterator that yields &str slices
+                ret: Ty::named("SplitWhitespace".to_string(), vec![]),
+                is_method: true,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            }),
         };
         ctx.register_builtins();
         ctx
@@ -927,6 +1084,33 @@ impl TypeContext {
             },
         );
 
+        // Vec::sort_by(vec, cmp_fn) - sort with custom comparator
+        self.functions.insert(
+            "Vec::sort_by".to_string(),
+            FnSig {
+                name: "Vec::sort_by".to_string(),
+                generics: vec!["T".to_string()],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![
+                    Ty::reference(Ty::named("Vec".to_string(), vec![Ty::generic("T".to_string())]), true),
+                    // Comparator: fn(&T, &T) -> Ordering
+                    Ty::function(
+                        vec![
+                            Ty::reference(Ty::generic("T".to_string()), false),
+                            Ty::reference(Ty::generic("T".to_string()), false),
+                        ],
+                        Ty::named("Ordering".to_string(), vec![]),
+                    ),
+                ],
+                ret: Ty::unit(),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
         // Vec::first(vec) - get first element
         self.functions.insert(
             "Vec::first".to_string(),
@@ -1246,6 +1430,25 @@ impl TypeContext {
             },
         );
 
+        // ============ SplitWhitespace Methods ============
+
+        // SplitWhitespace::collect(iter) - collects into Vec<&str>
+        self.functions.insert(
+            "SplitWhitespace::collect".to_string(),
+            FnSig {
+                name: "SplitWhitespace::collect".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::named("SplitWhitespace".to_string(), vec![])],
+                ret: Ty::named("Vec".to_string(), vec![Ty::reference(Ty::str(), false)]),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
         // ============ MapIter Methods ============
 
         // MapIter::next(iter) - returns Option<U>
@@ -1346,6 +1549,23 @@ impl TypeContext {
                 generic_bounds: HashMap::new(),
                 generic_defaults: HashMap::new(),
                 params: vec![Ty::str()],
+                ret: Ty::named("String".to_string(), vec![]),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // String::from_utf8_lossy(bytes) - create string from bytes, replacing invalid UTF-8
+        self.functions.insert(
+            "String::from_utf8_lossy".to_string(),
+            FnSig {
+                name: "String::from_utf8_lossy".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::reference(Ty::slice(Ty::u8()), false)],
                 ret: Ty::named("String".to_string(), vec![]),
                 is_method: false,
                 is_async: false,
@@ -4580,6 +4800,865 @@ impl TypeContext {
                 module: None,
             },
         );
+
+        // ============ std::cmp::Ordering ============
+
+        // Register Ordering enum
+        self.types.insert(
+            "Ordering".to_string(),
+            TypeDef {
+                name: "Ordering".to_string(),
+                generics: vec![],
+                generic_defaults: HashMap::new(),
+                kind: TypeDefKind::Enum {
+                    variants: vec![
+                        ("Less".to_string(), vec![]),
+                        ("Equal".to_string(), vec![]),
+                        ("Greater".to_string(), vec![]),
+                    ],
+                },
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // ============ Image Module Types (for Genesis OS) ============
+
+        // Register ImageError enum
+        self.types.insert(
+            "ImageError".to_string(),
+            TypeDef {
+                name: "ImageError".to_string(),
+                generics: vec![],
+                generic_defaults: HashMap::new(),
+                kind: TypeDefKind::Enum {
+                    variants: vec![
+                        ("UnknownFormat".to_string(), vec![]),
+                        ("UnsupportedFormat".to_string(), vec![]),
+                        ("InvalidData".to_string(), vec![]),
+                        ("InvalidHeader".to_string(), vec![]),
+                        ("InvalidChunk".to_string(), vec![]),
+                        ("DecompressionFailed".to_string(), vec![]),
+                        ("InvalidFilter".to_string(), vec![]),
+                        ("InvalidHuffman".to_string(), vec![]),
+                        ("InvalidDct".to_string(), vec![]),
+                        ("InvalidMarker".to_string(), vec![]),
+                        ("TruncatedData".to_string(), vec![]),
+                        ("OutOfMemory".to_string(), vec![]),
+                        ("NoFrames".to_string(), vec![]),
+                        ("InvalidPath".to_string(), vec![]),
+                        ("ParseError".to_string(), vec![]),
+                    ],
+                },
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // Register ImageFormat enum
+        self.types.insert(
+            "ImageFormat".to_string(),
+            TypeDef {
+                name: "ImageFormat".to_string(),
+                generics: vec![],
+                generic_defaults: HashMap::new(),
+                kind: TypeDefKind::Enum {
+                    variants: vec![
+                        ("Unknown".to_string(), vec![]),
+                        ("Png".to_string(), vec![]),
+                        ("Jpeg".to_string(), vec![]),
+                        ("Gif".to_string(), vec![]),
+                        ("Webp".to_string(), vec![]),
+                        ("Svg".to_string(), vec![]),
+                        ("Bmp".to_string(), vec![]),
+                    ],
+                },
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // Register PixelFormat enum
+        self.types.insert(
+            "PixelFormat".to_string(),
+            TypeDef {
+                name: "PixelFormat".to_string(),
+                generics: vec![],
+                generic_defaults: HashMap::new(),
+                kind: TypeDefKind::Enum {
+                    variants: vec![
+                        ("Rgba".to_string(), vec![]),
+                        ("Rgb".to_string(), vec![]),
+                        ("GrayAlpha".to_string(), vec![]),
+                        ("Gray".to_string(), vec![]),
+                        ("Indexed".to_string(), vec![]),
+                    ],
+                },
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // Register ImageBuffer struct
+        self.types.insert(
+            "ImageBuffer".to_string(),
+            TypeDef {
+                name: "ImageBuffer".to_string(),
+                generics: vec![],
+                generic_defaults: HashMap::new(),
+                kind: TypeDefKind::Struct {
+                    fields: vec![
+                        ("width".to_string(), Ty::u32()),
+                        ("height".to_string(), Ty::u32()),
+                        ("format".to_string(), Ty::named("PixelFormat".to_string(), vec![])),
+                        ("data".to_string(), Ty::named("Vec".to_string(), vec![Ty::u8()])),
+                    ],
+                },
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // Register ImageBuffer::new_rgba as a constructor function
+        self.functions.insert(
+            "ImageBuffer::new_rgba".to_string(),
+            FnSig {
+                name: "ImageBuffer::new_rgba".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::u32(), Ty::u32()],
+                ret: Ty::named("ImageBuffer".to_string(), vec![]),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // ============ Image Types ============
+
+        // Register AnimatedImage type with fields
+        self.types.insert(
+            "AnimatedImage".to_string(),
+            TypeDef {
+                name: "AnimatedImage".to_string(),
+                generics: vec![],
+                generic_defaults: HashMap::new(),
+                kind: TypeDefKind::Struct {
+                    fields: vec![
+                        ("width".to_string(), Ty::u32()),
+                        ("height".to_string(), Ty::u32()),
+                        ("frames".to_string(), Ty::named("Vec".to_string(), vec![Ty::named("AnimationFrame".to_string(), vec![])])),
+                        ("frame_count".to_string(), Ty::usize()),
+                        ("loop_count".to_string(), Ty::u32()),
+                        ("background_color".to_string(), Ty::u32()),
+                    ],
+                },
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // Register AnimationFrame type with fields
+        self.types.insert(
+            "AnimationFrame".to_string(),
+            TypeDef {
+                name: "AnimationFrame".to_string(),
+                generics: vec![],
+                generic_defaults: HashMap::new(),
+                kind: TypeDefKind::Struct {
+                    fields: vec![
+                        ("buffer".to_string(), Ty::named("ImageBuffer".to_string(), vec![])),
+                        ("delay_ms".to_string(), Ty::u32()),
+                        ("x".to_string(), Ty::u32()),
+                        ("y".to_string(), Ty::u32()),
+                        ("x_offset".to_string(), Ty::u32()),
+                        ("y_offset".to_string(), Ty::u32()),
+                        ("width".to_string(), Ty::u32()),
+                        ("height".to_string(), Ty::u32()),
+                        ("dispose".to_string(), Ty::named("DisposeOp".to_string(), vec![])),
+                        ("blend".to_string(), Ty::named("BlendOp".to_string(), vec![])),
+                        ("dispose_op".to_string(), Ty::named("DisposeOp".to_string(), vec![])),
+                        ("blend_op".to_string(), Ty::named("BlendOp".to_string(), vec![])),
+                    ],
+                },
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // Register XmlNode as an enum with variants: Element, Text, Comment
+        self.types.insert(
+            "XmlNode".to_string(),
+            TypeDef {
+                name: "XmlNode".to_string(),
+                generics: vec![],
+                generic_defaults: HashMap::new(),
+                kind: TypeDefKind::Enum {
+                    variants: vec![
+                        // Element { name: String, attributes: Vec<(String, String)>, children: Vec<XmlNode> }
+                        ("Element".to_string(), vec![
+                            Ty::named("String".to_string(), vec![]),
+                            Ty::named("Vec".to_string(), vec![Ty::tuple(vec![Ty::named("String".to_string(), vec![]), Ty::named("String".to_string(), vec![])])]),
+                            Ty::named("Vec".to_string(), vec![Ty::named("XmlNode".to_string(), vec![])]),
+                        ]),
+                        // Text(String)
+                        ("Text".to_string(), vec![Ty::named("String".to_string(), vec![])]),
+                        // Comment(String)
+                        ("Comment".to_string(), vec![Ty::named("String".to_string(), vec![])]),
+                    ],
+                },
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // Register DisposeOp and BlendOp enums
+        self.types.insert(
+            "DisposeOp".to_string(),
+            TypeDef {
+                name: "DisposeOp".to_string(),
+                generics: vec![],
+                generic_defaults: HashMap::new(),
+                kind: TypeDefKind::Enum {
+                    variants: vec![
+                        ("None".to_string(), vec![]),
+                        ("Background".to_string(), vec![]),
+                        ("Previous".to_string(), vec![]),
+                    ],
+                },
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        self.types.insert(
+            "BlendOp".to_string(),
+            TypeDef {
+                name: "BlendOp".to_string(),
+                generics: vec![],
+                generic_defaults: HashMap::new(),
+                kind: TypeDefKind::Enum {
+                    variants: vec![
+                        ("Source".to_string(), vec![]),
+                        ("Over".to_string(), vec![]),
+                    ],
+                },
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // Register Point struct for SVG
+        self.types.insert(
+            "Point".to_string(),
+            TypeDef {
+                name: "Point".to_string(),
+                generics: vec![],
+                generic_defaults: HashMap::new(),
+                kind: TypeDefKind::Struct {
+                    fields: vec![
+                        ("x".to_string(), Ty::f64()),
+                        ("y".to_string(), Ty::f64()),
+                    ],
+                },
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // Register Path struct for SVG (used by PathCommand)
+        self.types.insert(
+            "Path".to_string(),
+            TypeDef {
+                name: "Path".to_string(),
+                generics: vec![],
+                generic_defaults: HashMap::new(),
+                kind: TypeDefKind::Struct {
+                    fields: vec![
+                        ("commands".to_string(), Ty::named("Vec".to_string(), vec![Ty::named("PathCommand".to_string(), vec![])])),
+                    ],
+                },
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // Register PathCommand enum for SVG
+        self.types.insert(
+            "PathCommand".to_string(),
+            TypeDef {
+                name: "PathCommand".to_string(),
+                generics: vec![],
+                generic_defaults: HashMap::new(),
+                kind: TypeDefKind::Enum {
+                    variants: vec![
+                        ("MoveTo".to_string(), vec![Ty::named("Point".to_string(), vec![])]),
+                        ("LineTo".to_string(), vec![Ty::named("Point".to_string(), vec![])]),
+                        ("CurveTo".to_string(), vec![
+                            Ty::named("Point".to_string(), vec![]),
+                            Ty::named("Point".to_string(), vec![]),
+                            Ty::named("Point".to_string(), vec![]),
+                        ]),
+                        ("QuadTo".to_string(), vec![
+                            Ty::named("Point".to_string(), vec![]),
+                            Ty::named("Point".to_string(), vec![]),
+                        ]),
+                        ("ArcTo".to_string(), vec![
+                            // rx, ry, x_rotation, large_arc, sweep, end
+                            Ty::f64(), Ty::f64(), Ty::f64(), Ty::bool(), Ty::bool(),
+                            Ty::named("Point".to_string(), vec![]),
+                        ]),
+                        ("ClosePath".to_string(), vec![]),
+                    ],
+                },
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // AnimatedImage::new(width, height) -> AnimatedImage
+        self.functions.insert(
+            "AnimatedImage::new".to_string(),
+            FnSig {
+                name: "AnimatedImage::new".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::u32(), Ty::u32()],
+                ret: Ty::named("AnimatedImage".to_string(), vec![]),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // AnimatedImage::from_static(buffer) -> AnimatedImage
+        self.functions.insert(
+            "AnimatedImage::from_static".to_string(),
+            FnSig {
+                name: "AnimatedImage::from_static".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::named("ImageBuffer".to_string(), vec![])],
+                ret: Ty::named("AnimatedImage".to_string(), vec![]),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // AnimationFrame::new(buffer, delay_ms) -> AnimationFrame
+        self.functions.insert(
+            "AnimationFrame::new".to_string(),
+            FnSig {
+                name: "AnimationFrame::new".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::named("ImageBuffer".to_string(), vec![]), Ty::u32()],
+                ret: Ty::named("AnimationFrame".to_string(), vec![]),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // ============ Module-qualified Image Functions ============
+
+        // png::decode(data: &[u8]) -> Result<ImageBuffer, ImageError>
+        self.functions.insert(
+            "png::decode".to_string(),
+            FnSig {
+                name: "png::decode".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::reference(Ty::slice(Ty::u8()), false)],
+                ret: Ty::result(Ty::named("ImageBuffer".to_string(), vec![]), Ty::named("ImageError".to_string(), vec![])),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // gif::decode(data: &[u8]) -> Result<AnimatedImage, ImageError>
+        self.functions.insert(
+            "gif::decode".to_string(),
+            FnSig {
+                name: "gif::decode".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::reference(Ty::slice(Ty::u8()), false)],
+                ret: Ty::result(Ty::named("AnimatedImage".to_string(), vec![]), Ty::named("ImageError".to_string(), vec![])),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // jpeg::decode(data: &[u8]) -> Result<ImageBuffer, ImageError>
+        self.functions.insert(
+            "jpeg::decode".to_string(),
+            FnSig {
+                name: "jpeg::decode".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::reference(Ty::slice(Ty::u8()), false)],
+                ret: Ty::result(Ty::named("ImageBuffer".to_string(), vec![]), Ty::named("ImageError".to_string(), vec![])),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // webp::decode(data: &[u8]) -> Result<ImageBuffer, ImageError>
+        self.functions.insert(
+            "webp::decode".to_string(),
+            FnSig {
+                name: "webp::decode".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::reference(Ty::slice(Ty::u8()), false)],
+                ret: Ty::result(Ty::named("ImageBuffer".to_string(), vec![]), Ty::named("ImageError".to_string(), vec![])),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // webp::decode_animated(data: &[u8]) -> Result<AnimatedImage, ImageError>
+        self.functions.insert(
+            "webp::decode_animated".to_string(),
+            FnSig {
+                name: "webp::decode_animated".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::reference(Ty::slice(Ty::u8()), false)],
+                ret: Ty::result(Ty::named("AnimatedImage".to_string(), vec![]), Ty::named("ImageError".to_string(), vec![])),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // svg::render(data: &[u8], width: u32, height: u32) -> Result<ImageBuffer, ImageError>
+        self.functions.insert(
+            "svg::render".to_string(),
+            FnSig {
+                name: "svg::render".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::reference(Ty::slice(Ty::u8()), false), Ty::u32(), Ty::u32()],
+                ret: Ty::result(Ty::named("ImageBuffer".to_string(), vec![]), Ty::named("ImageError".to_string(), vec![])),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // xml::parse(data: &[u8]) -> Result<XmlNode, ImageError>
+        self.functions.insert(
+            "xml::parse".to_string(),
+            FnSig {
+                name: "xml::parse".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::reference(Ty::slice(Ty::u8()), false)],
+                ret: Ty::result(Ty::named("XmlNode".to_string(), vec![]), Ty::named("ImageError".to_string(), vec![])),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // deflate::inflate(data: &[u8]) -> Result<Vec<u8>, ImageError>
+        self.functions.insert(
+            "deflate::inflate".to_string(),
+            FnSig {
+                name: "deflate::inflate".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::reference(Ty::slice(Ty::u8()), false)],
+                ret: Ty::result(Ty::named("Vec".to_string(), vec![Ty::u8()]), Ty::named("ImageError".to_string(), vec![])),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // deflate::inflate_zlib(data: &[u8]) -> Result<Vec<u8>, ImageError>
+        self.functions.insert(
+            "deflate::inflate_zlib".to_string(),
+            FnSig {
+                name: "deflate::inflate_zlib".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::reference(Ty::slice(Ty::u8()), false)],
+                ret: Ty::result(Ty::named("Vec".to_string(), vec![Ty::u8()]), Ty::named("ImageError".to_string(), vec![])),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // Also register inflate_zlib without module prefix (used by png.gl)
+        self.functions.insert(
+            "inflate_zlib".to_string(),
+            FnSig {
+                name: "inflate_zlib".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::reference(Ty::slice(Ty::u8()), false)],
+                ret: Ty::result(Ty::named("Vec".to_string(), vec![Ty::u8()]), Ty::named("ImageError".to_string(), vec![])),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // char::from_u32(u32) -> Option<char>
+        self.functions.insert(
+            "char::from_u32".to_string(),
+            FnSig {
+                name: "char::from_u32".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::u32()],
+                ret: Ty::option(Ty::char()),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // ============ Graphics Functions ============
+
+        // blit_blend(ctx: &GfxContext, x: i32, y: i32, data: u64, width: u32, height: u32)
+        self.functions.insert(
+            "blit_blend".to_string(),
+            FnSig {
+                name: "blit_blend".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![
+                    Ty::reference(Ty::named("GfxContext".to_string(), vec![]), false),
+                    Ty::i32(), // x
+                    Ty::i32(), // y
+                    Ty::u64(), // data pointer as u64
+                    Ty::u32(), // width
+                    Ty::u32(), // height
+                ],
+                ret: Ty::unit(),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // Register GfxContext type
+        self.types.insert(
+            "GfxContext".to_string(),
+            TypeDef {
+                name: "GfxContext".to_string(),
+                generics: vec![],
+                generic_defaults: HashMap::new(),
+                kind: TypeDefKind::Struct { fields: vec![] },
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // ============ Integer type associated functions ============
+
+        // u8::from_str_radix(s: &str, radix: u32) -> Result<u8, ParseError>
+        self.functions.insert(
+            "u8::from_str_radix".to_string(),
+            FnSig {
+                name: "u8::from_str_radix".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::reference(Ty::str(), false), Ty::u32()],
+                ret: Ty::result(Ty::u8(), Ty::named("ParseError".to_string(), vec![])),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // u16::from_str_radix, u32::from_str_radix, etc.
+        for int_type in &["u16", "u32", "u64", "i8", "i16", "i32", "i64"] {
+            let ty = match *int_type {
+                "u16" => Ty::u16(),
+                "u32" => Ty::u32(),
+                "u64" => Ty::u64(),
+                "i8" => Ty::i8(),
+                "i16" => Ty::i16(),
+                "i32" => Ty::i32(),
+                "i64" => Ty::i64(),
+                _ => Ty::i32(),
+            };
+            let fn_name = format!("{}::from_str_radix", int_type);
+            self.functions.insert(
+                fn_name.clone(),
+                FnSig {
+                    name: fn_name,
+                    generics: vec![],
+                    generic_bounds: HashMap::new(),
+                    generic_defaults: HashMap::new(),
+                    params: vec![Ty::reference(Ty::str(), false), Ty::u32()],
+                    ret: Ty::result(ty, Ty::named("ParseError".to_string(), vec![])),
+                    is_method: false,
+                    is_async: false,
+                    is_pub: true,
+                    module: None,
+                },
+            );
+        }
+
+        // ============ Image Helper Functions (from common.gl) ============
+
+        // read_u8(data: &[u8], offset: usize) -> u8
+        self.functions.insert(
+            "read_u8".to_string(),
+            FnSig {
+                name: "read_u8".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::reference(Ty::slice(Ty::u8()), false), Ty::usize()],
+                ret: Ty::u8(),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // read_u16_be(data: &[u8], offset: usize) -> u16
+        self.functions.insert(
+            "read_u16_be".to_string(),
+            FnSig {
+                name: "read_u16_be".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::reference(Ty::slice(Ty::u8()), false), Ty::usize()],
+                ret: Ty::u16(),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // read_u16_le(data: &[u8], offset: usize) -> u16
+        self.functions.insert(
+            "read_u16_le".to_string(),
+            FnSig {
+                name: "read_u16_le".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::reference(Ty::slice(Ty::u8()), false), Ty::usize()],
+                ret: Ty::u16(),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // read_u32_be(data: &[u8], offset: usize) -> u32
+        self.functions.insert(
+            "read_u32_be".to_string(),
+            FnSig {
+                name: "read_u32_be".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::reference(Ty::slice(Ty::u8()), false), Ty::usize()],
+                ret: Ty::u32(),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // read_u32_le(data: &[u8], offset: usize) -> u32
+        self.functions.insert(
+            "read_u32_le".to_string(),
+            FnSig {
+                name: "read_u32_le".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::reference(Ty::slice(Ty::u8()), false), Ty::usize()],
+                ret: Ty::u32(),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // read_i16_be(data: &[u8], offset: usize) -> i16
+        self.functions.insert(
+            "read_i16_be".to_string(),
+            FnSig {
+                name: "read_i16_be".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::reference(Ty::slice(Ty::u8()), false), Ty::usize()],
+                ret: Ty::i16(),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // read_i32_be(data: &[u8], offset: usize) -> i32
+        self.functions.insert(
+            "read_i32_be".to_string(),
+            FnSig {
+                name: "read_i32_be".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::reference(Ty::slice(Ty::u8()), false), Ty::usize()],
+                ret: Ty::i32(),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // clamp_u8(val: i32) -> u8
+        self.functions.insert(
+            "clamp_u8".to_string(),
+            FnSig {
+                name: "clamp_u8".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::i32()],
+                ret: Ty::u8(),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // alpha_blend(src: u32, dst: u32) -> u32
+        self.functions.insert(
+            "alpha_blend".to_string(),
+            FnSig {
+                name: "alpha_blend".to_string(),
+                generics: vec![],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::u32(), Ty::u32()],
+                ret: Ty::u32(),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // ============ Standard Library Functions ============
+
+        // std::mem::swap<T>(a: &mut T, b: &mut T)
+        self.functions.insert(
+            "std::mem::swap".to_string(),
+            FnSig {
+                name: "std::mem::swap".to_string(),
+                generics: vec!["T".to_string()],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![
+                    Ty::reference(Ty::generic("T".to_string()), true),
+                    Ty::reference(Ty::generic("T".to_string()), true),
+                ],
+                ret: Ty::unit(),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // std::mem::take<T>(dest: &mut T) -> T
+        self.functions.insert(
+            "std::mem::take".to_string(),
+            FnSig {
+                name: "std::mem::take".to_string(),
+                generics: vec!["T".to_string()],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![Ty::reference(Ty::generic("T".to_string()), true)],
+                ret: Ty::generic("T".to_string()),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
+
+        // std::mem::replace<T>(dest: &mut T, src: T) -> T
+        self.functions.insert(
+            "std::mem::replace".to_string(),
+            FnSig {
+                name: "std::mem::replace".to_string(),
+                generics: vec!["T".to_string()],
+                generic_bounds: HashMap::new(),
+                generic_defaults: HashMap::new(),
+                params: vec![
+                    Ty::reference(Ty::generic("T".to_string()), true),
+                    Ty::generic("T".to_string()),
+                ],
+                ret: Ty::generic("T".to_string()),
+                is_method: false,
+                is_async: false,
+                is_pub: true,
+                module: None,
+            },
+        );
     }
 
     // ============ Scope Management ============
@@ -5005,6 +6084,59 @@ impl TypeContext {
 
     /// Find a specific method for a type (including trait methods)
     pub fn find_method(&self, ty: &Ty, method_name: &str) -> Option<&FnSig> {
+        // Handle built-in slice/array methods
+        match &ty.kind {
+            TyKind::Slice { .. } | TyKind::Array { .. } => {
+                match method_name {
+                    "len" => return self.builtin_slice_len.as_ref(),
+                    "is_empty" => return self.builtin_slice_is_empty.as_ref(),
+                    _ => {}
+                }
+            }
+            TyKind::Str => {
+                match method_name {
+                    "len" => return self.builtin_str_len.as_ref(),
+                    "is_empty" => return self.builtin_str_is_empty.as_ref(),
+                    "as_bytes" => return self.builtin_str_as_bytes.as_ref(),
+                    "chars" => return self.builtin_str_chars.as_ref(),
+                    "trim" => return self.builtin_str_trim.as_ref(),
+                    "to_lowercase" => return self.builtin_str_to_lowercase.as_ref(),
+                    "ends_with" => return self.builtin_str_ends_with.as_ref(),
+                    "starts_with" => return self.builtin_str_starts_with.as_ref(),
+                    "split_whitespace" => return self.builtin_str_split_whitespace.as_ref(),
+                    _ => {}
+                }
+            }
+            TyKind::Ref { inner, .. } => {
+                // Delegate to the inner type for reference types
+                match &inner.kind {
+                    TyKind::Slice { .. } | TyKind::Array { .. } => {
+                        match method_name {
+                            "len" => return self.builtin_slice_len.as_ref(),
+                            "is_empty" => return self.builtin_slice_is_empty.as_ref(),
+                            _ => {}
+                        }
+                    }
+                    TyKind::Str => {
+                        match method_name {
+                            "len" => return self.builtin_str_len.as_ref(),
+                            "is_empty" => return self.builtin_str_is_empty.as_ref(),
+                            "as_bytes" => return self.builtin_str_as_bytes.as_ref(),
+                            "chars" => return self.builtin_str_chars.as_ref(),
+                            "trim" => return self.builtin_str_trim.as_ref(),
+                            "to_lowercase" => return self.builtin_str_to_lowercase.as_ref(),
+                            "ends_with" => return self.builtin_str_ends_with.as_ref(),
+                            "starts_with" => return self.builtin_str_starts_with.as_ref(),
+                            "split_whitespace" => return self.builtin_str_split_whitespace.as_ref(),
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+
         // Get the type name for method lookup
         let type_name = match &ty.kind {
             TyKind::Named { name, .. } => name.clone(),

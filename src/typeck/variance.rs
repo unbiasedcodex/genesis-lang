@@ -348,6 +348,9 @@ pub fn is_subtype(sub: &Ty, sup: &Ty) -> bool {
         // Actors must match exactly
         (TyKind::Actor { name: n1 }, TyKind::Actor { name: n2 }) => n1 == n2,
 
+        // String is a subtype of str (String can deref to &str)
+        (TyKind::Named { name: sub_name, .. }, TyKind::Str) if sub_name == "String" => true,
+
         // No subtyping relationship
         _ => false,
     }

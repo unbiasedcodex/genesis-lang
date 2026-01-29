@@ -153,8 +153,13 @@ impl<'a> ExhaustivenessChecker<'a> {
                 Literal::Bool(b) => Constructor::Bool(*b),
                 Literal::Int(i) => Constructor::Int(*i),
                 Literal::String(s) => Constructor::Str(s.clone()),
+                Literal::ByteString(bytes) => {
+                    // Treat byte strings like strings for exhaustiveness
+                    Constructor::Str(String::from_utf8_lossy(bytes).to_string())
+                }
                 Literal::Float(_) => Constructor::Wildcard, // Float matching is problematic
                 Literal::Char(c) => Constructor::Int(*c as i128),
+                Literal::ByteChar(b) => Constructor::Int(*b as i128),
             },
             PatternKind::Tuple(pats) => Constructor::Tuple(pats.len()),
             PatternKind::Struct { path, .. } => {

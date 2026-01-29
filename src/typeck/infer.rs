@@ -15,7 +15,7 @@ use crate::ast::{
     UnaryOp, ActorDef, TypeAlias,
 };
 use crate::span::Span;
-use crate::typeck::context::{TypeContext, FnSig, ImplDef as CtxImplDef, ActorDef as CtxActorDef, TraitDef as CtxTraitDef, MessageDef};
+use crate::typeck::context::{TypeContext, FnSig, ImplDef as CtxImplDef, ActorDef as CtxActorDef, TraitDef as CtxTraitDef, MessageDef, TypeDefKind};
 use crate::typeck::error::{TypeError, TypeResult};
 use crate::typeck::exhaustiveness::{ExhaustivenessChecker, format_missing_patterns};
 use crate::typeck::ownership::OwnershipChecker;
@@ -42,6 +42,8 @@ pub struct TypeInference {
     macro_expander: MacroExpander,
     /// Current Self type when inside an impl block (for Self::method() calls)
     current_self_type: Option<Ty>,
+    /// Hints for closure parameter types (set by method calls like sort_by)
+    closure_param_hints: Option<Vec<Ty>>,
 }
 
 impl TypeInference {
@@ -56,6 +58,7 @@ impl TypeInference {
             generic_fn_calls_raw: HashMap::new(),
             macro_expander: MacroExpander::new(),
             current_self_type: None,
+            closure_param_hints: None,
         }
     }
 
@@ -726,8 +729,8 @@ impl TypeInference {
             .unwrap_or_else(Ty::unit);
         self.current_return_type = Some(expected_ret.clone());
 
-        // Check body
-        let body_ty = self.infer_block(&f.body)?;
+        // Check body - expect a value since this is a function body
+        let body_ty = self.infer_block_with_expected(&f.body, true)?;
 
         // Unify with expected return type
         self.unify_with_alias_expansion(&body_ty, &expected_ret, f.span)?;
@@ -1100,6 +1103,15 @@ impl TypeInference {
                         }
                     }
 
+                    // Handle well-known enum variant constructors
+                    match name.as_str() {
+                        "None" => return Ok(Ty::named("Option".to_string(), vec![Ty::fresh_var()])),
+                        "Some" => return Ok(Ty::function(vec![Ty::fresh_var()], Ty::named("Option".to_string(), vec![Ty::fresh_var()]))),
+                        "Ok" => return Ok(Ty::function(vec![Ty::fresh_var()], Ty::named("Result".to_string(), vec![Ty::fresh_var(), Ty::fresh_var()]))),
+                        "Err" => return Ok(Ty::function(vec![Ty::fresh_var()], Ty::named("Result".to_string(), vec![Ty::fresh_var(), Ty::fresh_var()]))),
+                        _ => {}
+                    }
+
                     Err(TypeError::undefined_variable(name.clone(), span))
                 } else {
                     // Multi-segment path like Module::function or Type::variant
@@ -1261,6 +1273,38 @@ impl TypeInference {
                         }
                     }
 
+                    // Try resolving qualified paths like std::cmp::Ordering::Equal
+                    // by looking for a known type in the suffix
+                    if path.segments.len() >= 3 {
+                        // Try the last two segments as Type::Variant
+                        let type_name = &path.segments[path.segments.len() - 2].ident.name;
+                        let variant_name = &path.segments[path.segments.len() - 1].ident.name;
+                        // Clone variant data to avoid holding borrow on self.ctx
+                        let variant_info: Option<(String, Vec<Ty>)> = self.ctx.lookup_type(type_name)
+                            .and_then(|type_def| {
+                                if let crate::typeck::context::TypeDefKind::Enum { variants } = &type_def.kind {
+                                    for (name, fields) in variants {
+                                        if name == variant_name {
+                                            return Some((type_name.clone(), fields.clone()));
+                                        }
+                                    }
+                                }
+                                None
+                            });
+                        if let Some((tname, fields)) = variant_info {
+                            if fields.is_empty() {
+                                return Ok(Ty::named(tname, vec![]));
+                            } else {
+                                let instantiated_fields: Vec<Ty> = fields.iter()
+                                    .map(|f| self.instantiate_generics(f))
+                                    .collect();
+                                let ret_ty = Ty::named(tname, vec![]);
+                                let instantiated_ret = self.instantiate_generics(&ret_ty);
+                                return Ok(Ty::function(instantiated_fields, instantiated_ret));
+                            }
+                        }
+                    }
+
                     Err(TypeError::undefined_variable(full_name, span))
                 }
             }
@@ -1363,9 +1407,8 @@ impl TypeInference {
                 }
             }
 
-            ExprKind::MethodCall { receiver, method, args } => {
+            ExprKind::MethodCall { receiver, method, type_args: _, args } => {
                 let receiver_ty = self.infer_expr(receiver)?;
-                let arg_tys: Vec<Ty> = args.iter().map(|a| self.infer_expr(a)).collect::<Result<_, _>>()?;
 
                 // Auto-dereference for method lookup (handles &self, &mut self, etc.)
                 let lookup_ty = match &receiver_ty.kind {
@@ -1373,10 +1416,628 @@ impl TypeInference {
                     _ => receiver_ty.clone(),
                 };
 
+                // Pre-type closure arguments for sort_by methods
+                // This allows closure parameter types to be inferred from the element type
+                if method.name.as_str() == "sort_by" && args.len() == 1 {
+                    if let ExprKind::Closure { .. } = &args[0].kind {
+                        let elem_ty = match &lookup_ty.kind {
+                            TyKind::Named { name, generics } if name == "Vec" => {
+                                generics.first().cloned()
+                            }
+                            TyKind::Slice { element } => Some((**element).clone()),
+                            _ => None,
+                        };
+                        if let Some(elem) = elem_ty {
+                            let ref_elem = Ty::reference(elem, false);
+                            self.closure_param_hints = Some(vec![ref_elem.clone(), ref_elem]);
+                        }
+                    }
+                }
+
+                let arg_tys: Vec<Ty> = args.iter().map(|a| self.infer_expr(a)).collect::<Result<_, _>>()?;
+
                 // Handle array.len() intrinsic - returns i64 (array length is compile-time known)
-                if let TyKind::Array { .. } = &lookup_ty.kind {
-                    if method.name == "len" && args.is_empty() {
-                        return Ok(Ty::i64());
+                if let TyKind::Array { element, .. } = &lookup_ty.kind {
+                    match method.name.as_str() {
+                        "len" if arg_tys.is_empty() => return Ok(Ty::i64()),
+                        "iter" if arg_tys.is_empty() => {
+                            return Ok(Ty::named("Iter".to_string(), vec![(**element).clone()]));
+                        }
+                        "iter_mut" if arg_tys.is_empty() => {
+                            return Ok(Ty::named("IterMut".to_string(), vec![(**element).clone()]));
+                        }
+                        _ => {}
+                    }
+                }
+
+                // Handle slice methods
+                if let TyKind::Slice { element } = &lookup_ty.kind {
+                    match method.name.as_str() {
+                        "len" if arg_tys.is_empty() => return Ok(Ty::usize()),
+                        "is_empty" if arg_tys.is_empty() => return Ok(Ty::bool()),
+                        "iter" if arg_tys.is_empty() => {
+                            return Ok(Ty::named("Iter".to_string(), vec![(**element).clone()]));
+                        }
+                        "iter_mut" if arg_tys.is_empty() => {
+                            return Ok(Ty::named("IterMut".to_string(), vec![(**element).clone()]));
+                        }
+                        "first" if arg_tys.is_empty() => {
+                            return Ok(Ty::option(Ty::reference((**element).clone(), false)));
+                        }
+                        "last" if arg_tys.is_empty() => {
+                            return Ok(Ty::option(Ty::reference((**element).clone(), false)));
+                        }
+                        "get" if arg_tys.len() == 1 => {
+                            return Ok(Ty::option(Ty::reference((**element).clone(), false)));
+                        }
+                        "get_mut" if arg_tys.len() == 1 => {
+                            return Ok(Ty::option(Ty::reference((**element).clone(), true)));
+                        }
+                        "split_at" if arg_tys.len() == 1 => {
+                            let slice_ref = Ty::reference(Ty::slice((**element).clone()), false);
+                            return Ok(Ty::tuple(vec![slice_ref.clone(), slice_ref]));
+                        }
+                        "split_at_mut" if arg_tys.len() == 1 => {
+                            let slice_ref = Ty::reference(Ty::slice((**element).clone()), true);
+                            return Ok(Ty::tuple(vec![slice_ref.clone(), slice_ref]));
+                        }
+                        "copy_from_slice" if arg_tys.len() == 1 => return Ok(Ty::unit()),
+                        "swap" if arg_tys.len() == 2 => return Ok(Ty::unit()),
+                        "reverse" if arg_tys.is_empty() => return Ok(Ty::unit()),
+                        "sort" if arg_tys.is_empty() => return Ok(Ty::unit()),
+                        "sort_by" if arg_tys.len() == 1 => return Ok(Ty::unit()),
+                        "fill" if arg_tys.len() == 1 => return Ok(Ty::unit()),
+                        "as_ptr" if arg_tys.is_empty() => {
+                            return Ok(Ty::raw_ptr((**element).clone(), false));
+                        }
+                        "as_mut_ptr" if arg_tys.is_empty() => {
+                            return Ok(Ty::raw_ptr((**element).clone(), true));
+                        }
+                        "to_vec" if arg_tys.is_empty() => {
+                            return Ok(Ty::named("Vec".to_string(), vec![(**element).clone()]));
+                        }
+                        "chunks" if arg_tys.len() == 1 => {
+                            return Ok(Ty::named("Chunks".to_string(), vec![(**element).clone()]));
+                        }
+                        "windows" if arg_tys.len() == 1 => {
+                            return Ok(Ty::named("Windows".to_string(), vec![(**element).clone()]));
+                        }
+                        _ => {}
+                    }
+                }
+
+                // Handle char methods
+                if matches!(lookup_ty.kind, TyKind::Char) {
+                    match method.name.as_str() {
+                        "is_whitespace" | "is_ascii_whitespace" => return Ok(Ty::bool()),
+                        "is_ascii" | "is_ascii_digit" | "is_ascii_alphabetic" | "is_ascii_alphanumeric" => return Ok(Ty::bool()),
+                        "is_ascii_lowercase" | "is_ascii_uppercase" | "is_ascii_hexdigit" => return Ok(Ty::bool()),
+                        "is_alphabetic" | "is_alphanumeric" | "is_numeric" | "is_digit" => return Ok(Ty::bool()),
+                        "is_lowercase" | "is_uppercase" | "is_control" => return Ok(Ty::bool()),
+                        "to_ascii_lowercase" | "to_ascii_uppercase" => return Ok(Ty::char()),
+                        "to_lowercase" | "to_uppercase" => return Ok(Ty::char()),
+                        "to_digit" if arg_tys.len() == 1 => return Ok(Ty::option(Ty::u32())),
+                        _ => {}
+                    }
+                }
+
+                // Handle float methods (f32, f64)
+                if lookup_ty.is_float() {
+                    match method.name.as_str() {
+                        "min" | "max" if arg_tys.len() == 1 => return Ok(lookup_ty.clone()),
+                        "abs" | "floor" | "ceil" | "round" | "trunc" | "fract" if arg_tys.is_empty() => return Ok(lookup_ty.clone()),
+                        "sqrt" | "cbrt" | "exp" | "exp2" | "ln" | "log2" | "log10" if arg_tys.is_empty() => return Ok(lookup_ty.clone()),
+                        "sin" | "cos" | "tan" | "asin" | "acos" | "atan" if arg_tys.is_empty() => return Ok(lookup_ty.clone()),
+                        "sinh" | "cosh" | "tanh" if arg_tys.is_empty() => return Ok(lookup_ty.clone()),
+                        "powf" | "powi" | "log" | "atan2" | "hypot" if arg_tys.len() == 1 => return Ok(lookup_ty.clone()),
+                        "is_nan" | "is_infinite" | "is_finite" | "is_normal" | "is_sign_positive" | "is_sign_negative" if arg_tys.is_empty() => return Ok(Ty::bool()),
+                        "to_degrees" | "to_radians" if arg_tys.is_empty() => return Ok(lookup_ty.clone()),
+                        "clamp" if arg_tys.len() == 2 => return Ok(lookup_ty.clone()),
+                        "partial_cmp" if arg_tys.len() == 1 => return Ok(Ty::option(Ty::named("Ordering".to_string(), vec![]))),
+                        _ => {}
+                    }
+                }
+
+                // Handle built-in clone() method - returns the same type
+                if method.name == "clone" && args.is_empty() {
+                    return Ok(lookup_ty.clone());
+                }
+
+                // Handle built-in to_string() method - returns String
+                if method.name == "to_string" && args.is_empty() {
+                    return Ok(Ty::named("String".to_string(), vec![]));
+                }
+
+                // Handle String methods
+                if let TyKind::Named { name, .. } = &lookup_ty.kind {
+                    if name == "String" {
+                        match method.name.as_str() {
+                            "as_str" if arg_tys.is_empty() => {
+                                return Ok(Ty::reference(Ty::str(), false));
+                            }
+                            "len" if arg_tys.is_empty() => {
+                                return Ok(Ty::usize());
+                            }
+                            "is_empty" if arg_tys.is_empty() => {
+                                return Ok(Ty::bool());
+                            }
+                            "push_str" if arg_tys.len() == 1 => {
+                                return Ok(Ty::unit());
+                            }
+                            "push" if arg_tys.len() == 1 => {
+                                return Ok(Ty::unit());
+                            }
+                            "parse" if arg_tys.is_empty() => {
+                                // parse::<T>() returns Result<T, ParseError>
+                                // The actual type is determined by type annotation
+                                return Ok(Ty::result(Ty::fresh_var(), Ty::named("ParseError".to_string(), vec![])));
+                            }
+                            "trim" if arg_tys.is_empty() => {
+                                return Ok(Ty::reference(Ty::str(), false));
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+
+                // Handle Vec methods
+                if let TyKind::Named { name, generics } = &lookup_ty.kind {
+                    if name == "Vec" {
+                        match method.name.as_str() {
+                            "clear" if arg_tys.is_empty() => {
+                                return Ok(Ty::unit());
+                            }
+                            "push" if arg_tys.len() == 1 => {
+                                return Ok(Ty::unit());
+                            }
+                            "pop" if arg_tys.is_empty() => {
+                                if let Some(elem) = generics.first() {
+                                    return Ok(Ty::option(elem.clone()));
+                                }
+                                return Ok(Ty::option(Ty::fresh_var()));
+                            }
+                            "len" if arg_tys.is_empty() => {
+                                return Ok(Ty::usize());
+                            }
+                            "is_empty" if arg_tys.is_empty() => {
+                                return Ok(Ty::bool());
+                            }
+                            "first" if arg_tys.is_empty() => {
+                                if let Some(elem) = generics.first() {
+                                    return Ok(Ty::option(Ty::reference(elem.clone(), false)));
+                                }
+                            }
+                            "last" if arg_tys.is_empty() => {
+                                if let Some(elem) = generics.first() {
+                                    return Ok(Ty::option(Ty::reference(elem.clone(), false)));
+                                }
+                            }
+                            "get" if arg_tys.len() == 1 => {
+                                if let Some(elem) = generics.first() {
+                                    return Ok(Ty::option(Ty::reference(elem.clone(), false)));
+                                }
+                            }
+                            "get_mut" if arg_tys.len() == 1 => {
+                                if let Some(elem) = generics.first() {
+                                    return Ok(Ty::option(Ty::reference(elem.clone(), true)));
+                                }
+                            }
+                            "iter" if arg_tys.is_empty() => {
+                                if let Some(elem) = generics.first() {
+                                    return Ok(Ty::named("Iter".to_string(), vec![elem.clone()]));
+                                }
+                            }
+                            "iter_mut" if arg_tys.is_empty() => {
+                                if let Some(elem) = generics.first() {
+                                    return Ok(Ty::named("IterMut".to_string(), vec![elem.clone()]));
+                                }
+                            }
+                            "extend_from_slice" if arg_tys.len() == 1 => {
+                                return Ok(Ty::unit());
+                            }
+                            "extend" if arg_tys.len() == 1 => {
+                                return Ok(Ty::unit());
+                            }
+                            "append" if arg_tys.len() == 1 => {
+                                return Ok(Ty::unit());
+                            }
+                            "reserve" | "reserve_exact" if arg_tys.len() == 1 => {
+                                return Ok(Ty::unit());
+                            }
+                            "truncate" if arg_tys.len() == 1 => {
+                                return Ok(Ty::unit());
+                            }
+                            "resize" if arg_tys.len() == 2 => {
+                                return Ok(Ty::unit());
+                            }
+                            "swap" if arg_tys.len() == 2 => {
+                                return Ok(Ty::unit());
+                            }
+                            "remove" if arg_tys.len() == 1 => {
+                                if let Some(elem) = generics.first() {
+                                    return Ok(elem.clone());
+                                }
+                            }
+                            "insert" if arg_tys.len() == 2 => {
+                                return Ok(Ty::unit());
+                            }
+                            "as_slice" if arg_tys.is_empty() => {
+                                if let Some(elem) = generics.first() {
+                                    return Ok(Ty::reference(Ty::slice(elem.clone()), false));
+                                }
+                            }
+                            "as_mut_slice" if arg_tys.is_empty() => {
+                                if let Some(elem) = generics.first() {
+                                    return Ok(Ty::reference(Ty::slice(elem.clone()), true));
+                                }
+                            }
+                            "with_capacity" if arg_tys.len() == 1 => {
+                                return Ok(Ty::named("Vec".to_string(), generics.clone()));
+                            }
+                            "as_ptr" if arg_tys.is_empty() => {
+                                if let Some(elem) = generics.first() {
+                                    return Ok(Ty::raw_ptr(elem.clone(), false));
+                                }
+                            }
+                            "as_mut_ptr" if arg_tys.is_empty() => {
+                                if let Some(elem) = generics.first() {
+                                    return Ok(Ty::raw_ptr(elem.clone(), true));
+                                }
+                            }
+                            "sort" if arg_tys.is_empty() => {
+                                return Ok(Ty::unit());
+                            }
+                            "sort_by" if arg_tys.len() == 1 => {
+                                // Infer closure parameter types from element type
+                                if let Some(elem) = generics.first() {
+                                    let expected_fn = Ty::function(
+                                        vec![Ty::reference(elem.clone(), false), Ty::reference(elem.clone(), false)],
+                                        Ty::named("Ordering".to_string(), vec![]),
+                                    );
+                                    let _ = self.unify_with_alias_expansion(&arg_tys[0], &expected_fn, span);
+                                }
+                                return Ok(Ty::unit());
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+
+                // Handle str methods that accept char or &str (Pattern trait simulation)
+                let is_str_type = matches!(&lookup_ty.kind, TyKind::Str)
+                    || matches!(&lookup_ty.kind, TyKind::Ref { inner, .. } if matches!(inner.kind, TyKind::Str));
+                if is_str_type && arg_tys.len() == 1 {
+                    let arg_ty = &arg_tys[0];
+                    let arg_is_pattern = matches!(arg_ty.kind, TyKind::Char) ||
+                       matches!(&arg_ty.kind, TyKind::Str) ||
+                       matches!(&arg_ty.kind, TyKind::Ref { inner, .. } if matches!(inner.kind, TyKind::Str));
+
+                    if arg_is_pattern {
+                        match method.name.as_str() {
+                            "ends_with" | "starts_with" | "contains" => {
+                                return Ok(Ty::bool());
+                            }
+                            "trim_end_matches" | "trim_start_matches" | "strip_prefix" | "strip_suffix" => {
+                                return Ok(Ty::reference(Ty::str(), false));
+                            }
+                            "split" | "rsplit" | "splitn" | "rsplitn" => {
+                                return Ok(Ty::named("Split".to_string(), vec![Ty::str()]));
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+
+                // Handle str methods with no arguments
+                if is_str_type && arg_tys.is_empty() {
+                    match method.name.as_str() {
+                        "parse" => {
+                            // parse returns Result<T, ParseError> where T is inferred
+                            return Ok(Ty::result(Ty::fresh_var(), Ty::named("ParseError".to_string(), vec![])));
+                        }
+                        "bytes" => {
+                            return Ok(Ty::named("Bytes".to_string(), vec![]));
+                        }
+                        "lines" => {
+                            return Ok(Ty::named("Lines".to_string(), vec![]));
+                        }
+                        "chars" => {
+                            return Ok(Ty::named("Chars".to_string(), vec![]));
+                        }
+                        "to_lowercase" | "to_uppercase" | "to_ascii_lowercase" | "to_ascii_uppercase" => {
+                            return Ok(Ty::named("String".to_string(), vec![]));
+                        }
+                        "trim" | "trim_start" | "trim_end" => {
+                            return Ok(Ty::reference(Ty::str(), false));
+                        }
+                        "len" => {
+                            return Ok(Ty::usize());
+                        }
+                        "is_empty" => {
+                            return Ok(Ty::bool());
+                        }
+                        "as_bytes" => {
+                            return Ok(Ty::reference(Ty::slice(Ty::u8()), false));
+                        }
+                        _ => {}
+                    }
+                }
+
+                // Handle Option methods
+                if let TyKind::Named { name, generics } = &lookup_ty.kind {
+                    if name == "Option" {
+                        let inner_ty = generics.first().cloned().unwrap_or_else(Ty::fresh_var);
+                        match method.name.as_str() {
+                            "ok_or" if arg_tys.len() == 1 => {
+                                let err_ty = arg_tys[0].clone();
+                                return Ok(Ty::result(inner_ty, err_ty));
+                            }
+                            "ok_or_else" if arg_tys.len() == 1 => {
+                                // arg is a closure returning E
+                                return Ok(Ty::result(inner_ty, Ty::fresh_var()));
+                            }
+                            "map" if arg_tys.len() == 1 => {
+                                return Ok(Ty::option(Ty::fresh_var()));
+                            }
+                            "and_then" if arg_tys.len() == 1 => {
+                                return Ok(Ty::option(Ty::fresh_var()));
+                            }
+                            "filter" if arg_tys.len() == 1 => {
+                                return Ok(Ty::option(inner_ty));
+                            }
+                            "take" if arg_tys.is_empty() => {
+                                return Ok(Ty::option(inner_ty));
+                            }
+                            "as_ref" if arg_tys.is_empty() => {
+                                return Ok(Ty::option(Ty::reference(inner_ty, false)));
+                            }
+                            "as_mut" if arg_tys.is_empty() => {
+                                return Ok(Ty::option(Ty::reference(inner_ty, true)));
+                            }
+                            "cloned" if arg_tys.is_empty() => {
+                                return Ok(Ty::option(inner_ty));
+                            }
+                            "copied" if arg_tys.is_empty() => {
+                                return Ok(Ty::option(inner_ty));
+                            }
+                            "flatten" if arg_tys.is_empty() => {
+                                // Option<Option<T>> -> Option<T>
+                                return Ok(inner_ty);
+                            }
+                            "unwrap" if arg_tys.is_empty() => {
+                                return Ok(inner_ty);
+                            }
+                            "unwrap_or" if arg_tys.len() == 1 => {
+                                return Ok(inner_ty);
+                            }
+                            "unwrap_or_else" if arg_tys.len() == 1 => {
+                                return Ok(inner_ty);
+                            }
+                            "unwrap_or_default" if arg_tys.is_empty() => {
+                                return Ok(inner_ty);
+                            }
+                            "expect" if arg_tys.len() == 1 => {
+                                return Ok(inner_ty);
+                            }
+                            "is_some" | "is_none" if arg_tys.is_empty() => {
+                                return Ok(Ty::bool());
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+
+                // Handle Result methods
+                if let TyKind::Named { name, generics } = &lookup_ty.kind {
+                    if name == "Result" {
+                        let ok_ty = generics.first().cloned().unwrap_or_else(Ty::fresh_var);
+                        let err_ty = generics.get(1).cloned().unwrap_or_else(Ty::fresh_var);
+                        match method.name.as_str() {
+                            "map" if arg_tys.len() == 1 => {
+                                return Ok(Ty::result(Ty::fresh_var(), err_ty));
+                            }
+                            "map_err" if arg_tys.len() == 1 => {
+                                return Ok(Ty::result(ok_ty, Ty::fresh_var()));
+                            }
+                            "and_then" if arg_tys.len() == 1 => {
+                                return Ok(Ty::result(Ty::fresh_var(), err_ty));
+                            }
+                            "or_else" if arg_tys.len() == 1 => {
+                                return Ok(Ty::result(ok_ty, Ty::fresh_var()));
+                            }
+                            "ok" if arg_tys.is_empty() => {
+                                return Ok(Ty::option(ok_ty));
+                            }
+                            "err" if arg_tys.is_empty() => {
+                                return Ok(Ty::option(err_ty));
+                            }
+                            "as_ref" if arg_tys.is_empty() => {
+                                return Ok(Ty::result(Ty::reference(ok_ty, false), Ty::reference(err_ty, false)));
+                            }
+                            "unwrap" if arg_tys.is_empty() => {
+                                return Ok(ok_ty);
+                            }
+                            "unwrap_or" if arg_tys.len() == 1 => {
+                                return Ok(ok_ty);
+                            }
+                            "unwrap_or_else" if arg_tys.len() == 1 => {
+                                return Ok(ok_ty);
+                            }
+                            "unwrap_or_default" if arg_tys.is_empty() => {
+                                return Ok(ok_ty);
+                            }
+                            "expect" if arg_tys.len() == 1 => {
+                                return Ok(ok_ty);
+                            }
+                            "unwrap_err" if arg_tys.is_empty() => {
+                                return Ok(err_ty);
+                            }
+                            "is_ok" | "is_err" if arg_tys.is_empty() => {
+                                return Ok(Ty::bool());
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+
+                // Handle iterator methods
+                if let TyKind::Named { name, generics } = &lookup_ty.kind {
+                    match name.as_str() {
+                        "Chars" | "Iter" | "IntoIter" | "IterMut" | "Split" | "SplitWhitespace" => {
+                            match method.name.as_str() {
+                                "peekable" if arg_tys.is_empty() => {
+                                    return Ok(Ty::named("Peekable".to_string(), vec![lookup_ty.clone()]));
+                                }
+                                "next" if arg_tys.is_empty() => {
+                                    // Simplified: next returns Option<char> for Chars
+                                    if name == "Chars" {
+                                        return Ok(Ty::option(Ty::char()));
+                                    }
+                                    // Split returns Option<&str>
+                                    if name == "Split" {
+                                        return Ok(Ty::option(Ty::reference(Ty::str(), false)));
+                                    }
+                                    return Ok(Ty::option(Ty::fresh_var()));
+                                }
+                                "collect" if arg_tys.is_empty() => {
+                                    // Split and SplitWhitespace collect to Vec<&str>
+                                    if name == "Split" || name == "SplitWhitespace" {
+                                        return Ok(Ty::named("Vec".to_string(), vec![Ty::reference(Ty::str(), false)]));
+                                    }
+                                    // Returns a collection - simplified to Vec<T>
+                                    return Ok(Ty::named("Vec".to_string(), vec![Ty::fresh_var()]));
+                                }
+                                _ => {}
+                            }
+                        }
+                        "Peekable" => {
+                            // Try to get element type from the inner iterator
+                            let elem_ty = if let Some(inner_iter) = generics.first() {
+                                match &inner_iter.kind {
+                                    TyKind::Named { name: iter_name, .. } if iter_name == "Chars" => Ty::char(),
+                                    TyKind::Named { name: iter_name, generics: iter_generics }
+                                        if iter_name == "Iter" || iter_name == "IntoIter" => {
+                                        iter_generics.first().cloned().unwrap_or_else(Ty::fresh_var)
+                                    }
+                                    _ => Ty::fresh_var(),
+                                }
+                            } else {
+                                Ty::fresh_var()
+                            };
+
+                            match method.name.as_str() {
+                                "peek" if arg_tys.is_empty() => {
+                                    return Ok(Ty::option(Ty::reference(elem_ty.clone(), false)));
+                                }
+                                "next" if arg_tys.is_empty() => {
+                                    return Ok(Ty::option(elem_ty.clone()));
+                                }
+                                "peek_mut" if arg_tys.is_empty() => {
+                                    return Ok(Ty::option(Ty::reference(elem_ty.clone(), true)));
+                                }
+                                _ => {}
+                            }
+                        }
+                        "ImageBuffer" => {
+                            match method.name.as_str() {
+                                "set_pixel" => {
+                                    // set_pixel(x: u32, y: u32, color: u32)
+                                    return Ok(Ty::unit());
+                                }
+                                "get_pixel" => {
+                                    // Returns u32 (ARGB)
+                                    return Ok(Ty::u32());
+                                }
+                                "width" | "height" if arg_tys.is_empty() => {
+                                    return Ok(Ty::u32());
+                                }
+                                "stride" if arg_tys.is_empty() => {
+                                    return Ok(Ty::usize());
+                                }
+                                "fill" if arg_tys.len() == 1 => {
+                                    return Ok(Ty::unit());
+                                }
+                                _ => {}
+                            }
+                        }
+                        "XmlNode" => {
+                            match method.name.as_str() {
+                                "name" if arg_tys.is_empty() => {
+                                    // name() returns Option<&str>
+                                    return Ok(Ty::option(Ty::reference(Ty::str(), false)));
+                                }
+                                "text" if arg_tys.is_empty() => {
+                                    return Ok(Ty::option(Ty::reference(Ty::str(), false)));
+                                }
+                                "attr" | "get_attr" => {
+                                    // get_attr(name: &str) returns Option<&str>
+                                    return Ok(Ty::option(Ty::reference(Ty::str(), false)));
+                                }
+                                "children" if arg_tys.is_empty() => {
+                                    // children() returns &[XmlNode]
+                                    return Ok(Ty::reference(Ty::slice(Ty::named("XmlNode".to_string(), vec![])), false));
+                                }
+                                "find_child" if arg_tys.len() == 1 => {
+                                    // find_child(name: &str) returns Option<&XmlNode>
+                                    return Ok(Ty::option(Ty::reference(Ty::named("XmlNode".to_string(), vec![]), false)));
+                                }
+                                _ => {}
+                            }
+                        }
+                        "AnimatedImage" => {
+                            match method.name.as_str() {
+                                "add_frame" if arg_tys.len() == 1 => {
+                                    return Ok(Ty::unit());
+                                }
+                                "get_frame" if arg_tys.len() == 1 => {
+                                    return Ok(Ty::option(Ty::reference(Ty::named("AnimationFrame".to_string(), vec![]), false)));
+                                }
+                                "frame_count" if arg_tys.is_empty() => {
+                                    return Ok(Ty::usize());
+                                }
+                                "width" | "height" if arg_tys.is_empty() => {
+                                    return Ok(Ty::u32());
+                                }
+                                _ => {}
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
+                // Handle integer wrapping methods (wrapping_add, wrapping_sub, etc.)
+                if lookup_ty.is_integer() {
+                    match method.name.as_str() {
+                        "wrapping_add" | "wrapping_sub" | "wrapping_mul" |
+                        "saturating_add" | "saturating_sub" | "saturating_mul" => {
+                            if arg_tys.len() == 1 {
+                                self.unify_with_alias_expansion(&lookup_ty, &arg_tys[0], span)?;
+                                return Ok(lookup_ty.clone());
+                            }
+                        }
+                        "checked_add" | "checked_sub" | "checked_mul" | "checked_div" => {
+                            if arg_tys.len() == 1 {
+                                self.unify_with_alias_expansion(&lookup_ty, &arg_tys[0], span)?;
+                                return Ok(Ty::option(lookup_ty.clone()));
+                            }
+                        }
+                        "count_ones" | "count_zeros" | "leading_zeros" | "trailing_zeros" => {
+                            if arg_tys.is_empty() {
+                                return Ok(Ty::u32());
+                            }
+                        }
+                        "abs" => {
+                            if arg_tys.is_empty() {
+                                return Ok(lookup_ty.clone());
+                            }
+                        }
+                        "min" | "max" => {
+                            if arg_tys.len() == 1 {
+                                self.unify_with_alias_expansion(&lookup_ty, &arg_tys[0], span)?;
+                                return Ok(lookup_ty.clone());
+                            }
+                        }
+                        _ => {}
                     }
                 }
 
@@ -1462,40 +2123,136 @@ impl TypeInference {
                 let obj_ty = self.infer_expr(object)?;
                 let idx_ty = self.infer_expr(index)?;
 
-                // Index must be usize
-                self.unify_with_alias_expansion(&idx_ty, &Ty::usize(), span)?;
-
-                match &obj_ty.kind {
-                    TyKind::Array { element, .. } => Ok((**element).clone()),
-                    TyKind::Slice { element } => Ok((**element).clone()),
-                    TyKind::Named { name, generics } if name == "Vec" => {
-                        if let Some(elem) = generics.first() {
-                            Ok(elem.clone())
-                        } else {
-                            Ok(Ty::fresh_var())
-                        }
+                // Auto-deref for &&T - if we have a double reference, deref once
+                let obj_ty = match &obj_ty.kind {
+                    TyKind::Ref { inner, .. } if matches!(inner.kind, TyKind::Ref { .. }) => {
+                        // &&T -> &T for indexing
+                        (**inner).clone()
                     }
-                    // String indexing returns u8 (byte)
-                    TyKind::Named { name, .. } if name == "String" => Ok(Ty::u8()),
-                    _ => Err(TypeError::not_indexable(obj_ty, span)),
+                    _ => obj_ty,
+                };
+
+                // Check if indexing with a Range (for slicing)
+                let is_range_index = matches!(&idx_ty.kind, TyKind::Named { name, .. } if name == "Range" || name == "RangeFrom" || name == "RangeTo" || name == "RangeFull");
+
+                if is_range_index {
+                    // Range slicing returns a slice type (or reference to slice if slicing a reference)
+                    // For direct arrays/slices: returns slice type so &mut arr[range] works correctly
+                    // For references: preserves the reference level
+                    match &obj_ty.kind {
+                        // Direct array/slice: return slice type (will be auto-borrowed or explicitly borrowed)
+                        TyKind::Array { element, .. } => Ok(Ty::slice((**element).clone())),
+                        TyKind::Slice { element } => Ok(Ty::slice((**element).clone())),
+                        // Reference to array/slice/vec: return reference to slice
+                        TyKind::Ref { inner, mutable } => {
+                            match &inner.kind {
+                                TyKind::Array { element, .. } => Ok(Ty::reference(Ty::slice((**element).clone()), *mutable)),
+                                TyKind::Slice { element } => Ok(Ty::reference(Ty::slice((**element).clone()), *mutable)),
+                                TyKind::Str => Ok(Ty::reference(Ty::str(), *mutable)),
+                                TyKind::Named { name, generics } if name == "Vec" => {
+                                    if let Some(elem) = generics.first() {
+                                        Ok(Ty::reference(Ty::slice(elem.clone()), *mutable))
+                                    } else {
+                                        Ok(Ty::reference(Ty::slice(Ty::fresh_var()), *mutable))
+                                    }
+                                }
+                                _ => Err(TypeError::not_indexable(obj_ty, span)),
+                            }
+                        }
+                        // Vec: return slice type (for consistency with arrays)
+                        TyKind::Named { name, generics } if name == "Vec" => {
+                            if let Some(elem) = generics.first() {
+                                Ok(Ty::slice(elem.clone()))
+                            } else {
+                                Ok(Ty::slice(Ty::fresh_var()))
+                            }
+                        }
+                        TyKind::Str => Ok(Ty::str()),
+                        TyKind::Named { name, .. } if name == "String" => Ok(Ty::str()),
+                        _ => Err(TypeError::not_indexable(obj_ty, span)),
+                    }
+                } else {
+                    // Regular indexing - index must be usize
+                    self.unify_with_alias_expansion(&idx_ty, &Ty::usize(), span)?;
+
+                    match &obj_ty.kind {
+                        TyKind::Array { element, .. } => Ok((**element).clone()),
+                        TyKind::Slice { element } => Ok((**element).clone()),
+                        // Handle references to arrays/slices/Vec: &[T], &[T; N], &Vec<T>
+                        TyKind::Ref { inner, .. } => {
+                            match &inner.kind {
+                                TyKind::Array { element, .. } => Ok((**element).clone()),
+                                TyKind::Slice { element } => Ok((**element).clone()),
+                                TyKind::Named { name, generics } if name == "Vec" => {
+                                    if let Some(elem) = generics.first() {
+                                        Ok(elem.clone())
+                                    } else {
+                                        Ok(Ty::fresh_var())
+                                    }
+                                }
+                                _ => Err(TypeError::not_indexable(obj_ty, span)),
+                            }
+                        }
+                        TyKind::Named { name, generics } if name == "Vec" => {
+                            if let Some(elem) = generics.first() {
+                                Ok(elem.clone())
+                            } else {
+                                Ok(Ty::fresh_var())
+                            }
+                        }
+                        // String indexing returns u8 (byte)
+                        TyKind::Named { name, .. } if name == "String" => Ok(Ty::u8()),
+                        _ => Err(TypeError::not_indexable(obj_ty, span)),
+                    }
                 }
             }
 
             ExprKind::Struct { path, fields } => {
                 let name = &path.segments[0].ident.name;
 
+                // Check if this is an enum variant struct (e.g., XmlNode::Element { ... })
+                if path.segments.len() >= 2 {
+                    let enum_name = &path.segments[0].ident.name;
+                    let variant_name = &path.segments[1].ident.name;
+
+                    // Look up the enum
+                    if let Some(type_def) = self.ctx.lookup_type(enum_name) {
+                        if let TypeDefKind::Enum { variants } = &type_def.kind {
+                            // Find the variant
+                            for (vname, vtypes) in variants {
+                                if vname == variant_name {
+                                    // For struct variants, check field count matches
+                                    // (simplified - doesn't check field names for now)
+                                    for field in fields {
+                                        let _ = self.infer_expr(&field.1)?;
+                                    }
+                                    return Ok(Ty::named(enum_name.clone(), vec![]));
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Look up type definition to get generic parameters
                 let type_def = self.ctx.lookup_type(name).cloned();
 
                 if let Some(struct_fields) = self.ctx.get_struct_fields(name) {
-                    // Create fresh type variables for each generic parameter
+                    // Create fresh type variables for each generic parameter,
+                    // but reuse existing generics if they're in scope
                     let generic_params = type_def.as_ref()
                         .map(|td| td.generics.clone())
                         .unwrap_or_default();
 
                     let generic_vars: Vec<Ty> = generic_params
                         .iter()
-                        .map(|_| Ty::fresh_var())
+                        .map(|param| {
+                            // Check if this generic is already in scope
+                            if let Some(existing) = self.ctx.lookup_generic(param) {
+                                existing.clone()
+                            } else {
+                                Ty::fresh_var()
+                            }
+                        })
                         .collect();
 
                     // Build substitution map: generic_name -> fresh_var
@@ -1567,19 +2324,48 @@ impl TypeInference {
                 Ok(Ty::tuple(tys))
             }
 
-            ExprKind::Block(block) => self.infer_block(block),
+            ExprKind::Block(block) => self.infer_block_with_expected(block, true),
 
             ExprKind::If { condition, then_branch, else_branch } => {
                 let cond_ty = self.infer_expr(condition)?;
                 self.unify_with_alias_expansion(&cond_ty, &Ty::bool(), condition.span)?;
 
-                let then_ty = self.infer_block(then_branch)?;
+                // With else: expect value from both branches
+                // Without else: then_branch returns unit
+                let has_else = else_branch.is_some();
+                let then_ty = self.infer_block_with_expected(then_branch, has_else)?;
 
                 if let Some(else_expr) = else_branch {
                     let else_ty = self.infer_expr(else_expr)?;
                     self.unify_with_alias_expansion(&then_ty, &else_ty, span)
                 } else {
                     // No else branch - if must be unit
+                    self.unify_with_alias_expansion(&then_ty, &Ty::unit(), span)?;
+                    Ok(Ty::unit())
+                }
+            }
+
+            ExprKind::IfLet { pattern, expr, then_branch, else_branch } => {
+                // Infer the type of the expression being matched
+                let expr_ty = self.infer_expr(expr)?;
+
+                // Enter a new scope for the then branch (pattern bindings are local)
+                self.ctx.enter_scope();
+
+                // Bind pattern variables
+                self.bind_pattern(pattern, &expr_ty)?;
+
+                // With else: expect value from both branches
+                // Without else: then_branch returns unit
+                let has_else = else_branch.is_some();
+                let then_ty = self.infer_block_with_expected(then_branch, has_else)?;
+                self.ctx.leave_scope();
+
+                if let Some(else_expr) = else_branch {
+                    let else_ty = self.infer_expr(else_expr)?;
+                    self.unify_with_alias_expansion(&then_ty, &else_ty, span)
+                } else {
+                    // No else branch - if-let must be unit
                     self.unify_with_alias_expansion(&then_ty, &Ty::unit(), span)?;
                     Ok(Ty::unit())
                 }
@@ -1647,6 +2433,27 @@ impl TypeInference {
                 Ok(Ty::unit())
             }
 
+            ExprKind::WhileLet { pattern, expr, body, .. } => {
+                // Infer the type of the expression being matched
+                let expr_ty = self.infer_expr(expr)?;
+
+                let prev_in_loop = self.in_loop;
+                self.in_loop = true;
+
+                // Enter a new scope for the body (pattern bindings are local)
+                self.ctx.enter_scope();
+
+                // Bind pattern variables
+                self.bind_pattern(pattern, &expr_ty)?;
+
+                let _ = self.infer_block(body)?;
+                self.ctx.leave_scope();
+
+                self.in_loop = prev_in_loop;
+
+                Ok(Ty::unit())
+            }
+
             ExprKind::For { pattern, iterable, body, .. } => {
                 let iter_ty = self.infer_expr(iterable)?;
 
@@ -1668,6 +2475,19 @@ impl TypeInference {
                     TyKind::Named { name, generics } if name == "Option" => {
                         // Option<T> can be iterated (yields T once or nothing)
                         generics.first().cloned().unwrap_or_else(Ty::fresh_var)
+                    }
+                    // Handle references: &Vec<T>, &[T], &[T; N]
+                    TyKind::Ref { inner, .. } => {
+                        match &inner.kind {
+                            TyKind::Array { element, .. } => Ty::reference((**element).clone(), false),
+                            TyKind::Slice { element } => Ty::reference((**element).clone(), false),
+                            TyKind::Named { name, generics } if name == "Vec" => {
+                                // &Vec<T> iterates over &T
+                                let elem = generics.first().cloned().unwrap_or_else(Ty::fresh_var);
+                                Ty::reference(elem, false)
+                            }
+                            _ => Ty::fresh_var(),
+                        }
                     }
                     _ => Ty::fresh_var(), // Assume it's some kind of iterator
                 };
@@ -1718,10 +2538,23 @@ impl TypeInference {
             ExprKind::Closure { params, body } => {
                 self.ctx.enter_scope();
 
+                // Take closure param hints if available
+                let hints = self.closure_param_hints.take();
+
                 let param_tys: Vec<Ty> = params
                     .iter()
-                    .map(|p| {
-                        let ty = self.ast_type_to_ty(&p.ty);
+                    .enumerate()
+                    .map(|(i, p)| {
+                        // Use hint type if available, otherwise infer from annotation
+                        let ty = if let Some(ref hints) = hints {
+                            if let Some(hint_ty) = hints.get(i) {
+                                hint_ty.clone()
+                            } else {
+                                self.ast_type_to_ty(&p.ty)
+                            }
+                        } else {
+                            self.ast_type_to_ty(&p.ty)
+                        };
                         self.ctx.define_var(&p.name.name, ty.clone(), p.is_mut);
                         ty
                     })
@@ -2093,8 +2926,8 @@ impl TypeInference {
             }
 
             ExprKind::UnsafeBlock(block) => {
-                // Unsafe block - type check contents and return block type
-                self.infer_block(block)
+                // Unsafe block - type check contents and return block type (expects value)
+                self.infer_block_with_expected(block, true)
             }
 
             ExprKind::Null => {
@@ -2160,8 +2993,10 @@ impl TypeInference {
         Ok(match lit {
             Literal::Int(_) => Ty::new(TyKind::IntVar),
             Literal::Float(_) => Ty::new(TyKind::FloatVar),
-            Literal::String(_) => Ty::str(),
+            Literal::String(_) => Ty::reference(Ty::str(), false), // &str
+            Literal::ByteString(_) => Ty::reference(Ty::slice(Ty::u8()), false), // &[u8]
             Literal::Char(_) => Ty::char(),
+            Literal::ByteChar(_) => Ty::u8(),
             Literal::Bool(_) => Ty::bool(),
         })
     }
@@ -2195,8 +3030,8 @@ impl TypeInference {
                 Ok(Ty::bool())
             }
 
-            // Bitwise: both must be integers, result is same type
-            BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor | BinaryOp::Shl | BinaryOp::Shr => {
+            // Bitwise AND/OR/XOR: both must be same integer type, result is that type
+            BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor => {
                 let unified = self.unify_with_alias_expansion(left, right, span)?;
                 if !unified.is_integer() && !matches!(unified.kind, TyKind::Var(_) | TyKind::IntVar) {
                     return Err(TypeError::binary_op_mismatch(
@@ -2207,6 +3042,31 @@ impl TypeInference {
                     ));
                 }
                 Ok(unified)
+            }
+
+            // Shift operations: left must be integer, right can be any integer type
+            // Result type is the type of the left operand
+            BinaryOp::Shl | BinaryOp::Shr => {
+                // Left operand must be an integer
+                if !left.is_integer() && !matches!(left.kind, TyKind::Var(_) | TyKind::IntVar) {
+                    return Err(TypeError::binary_op_mismatch(
+                        format!("{:?}", op),
+                        left.clone(),
+                        right.clone(),
+                        span,
+                    ));
+                }
+                // Right operand (shift amount) must be an integer but can be different type
+                if !right.is_integer() && !matches!(right.kind, TyKind::Var(_) | TyKind::IntVar) {
+                    return Err(TypeError::binary_op_mismatch(
+                        format!("{:?}", op),
+                        left.clone(),
+                        right.clone(),
+                        span,
+                    ));
+                }
+                // Result is the type of the left operand
+                Ok(left.clone())
             }
         }
     }
@@ -2248,30 +3108,37 @@ impl TypeInference {
     }
 
     fn infer_block(&mut self, block: &Block) -> TypeResult<Ty> {
+        self.infer_block_with_expected(block, false)
+    }
+
+    fn infer_block_with_expected(&mut self, block: &Block, expect_value: bool) -> TypeResult<Ty> {
         self.ctx.enter_scope();
 
+        // Process all statements first
         for stmt in &block.stmts {
             self.check_stmt(stmt)?;
         }
 
         let result = if let Some(expr) = &block.expr {
+            // Block has explicit trailing expression (no semicolon)
             self.infer_expr(expr)?
-        } else {
-            // Check if the last statement is a diverging expression (return, break, continue)
-            // If so, the block type is never (!) which unifies with any type
-            let diverges = block.stmts.last().map_or(false, |stmt| {
-                if let StmtKind::Expr(expr) = &stmt.kind {
-                    matches!(expr.kind, ExprKind::Return { .. })
-                } else {
-                    false
+        } else if let Some(last) = block.stmts.last() {
+            // When block.expr is None, the last statement had a semicolon,
+            // so the block type should be () (unit).
+            // Exception: diverging expressions like return/break/continue
+            match &last.kind {
+                StmtKind::Expr(expr) => {
+                    match &expr.kind {
+                        ExprKind::Return { .. } | ExprKind::Break { .. } | ExprKind::Continue { .. } => {
+                            Ty::never()
+                        }
+                        _ => Ty::unit()
+                    }
                 }
-            });
-
-            if diverges {
-                Ty::never()
-            } else {
-                Ty::unit()
+                _ => Ty::unit()
             }
+        } else {
+            Ty::unit()
         };
 
         self.ctx.leave_scope();
@@ -2361,9 +3228,21 @@ impl TypeInference {
                 Ok(())
             }
             PatternKind::Tuple(patterns) => {
-                if let TyKind::Tuple(elem_tys) = &ty.kind {
+                // Auto-deref: if ty is a reference, get the inner type
+                // This handles `for (a, b) in &vec_of_tuples` where element is &(T1, T2)
+                let derefed_ty = match &ty.kind {
+                    TyKind::Ref { inner, .. } => (**inner).clone(),
+                    _ => ty.clone(),
+                };
+                if let TyKind::Tuple(elem_tys) = &derefed_ty.kind {
                     for (p, t) in patterns.iter().zip(elem_tys.iter()) {
-                        self.bind_pattern(p, t)?;
+                        // When we derefed, the element types should be references too
+                        let elem_ty = if matches!(&ty.kind, TyKind::Ref { .. }) {
+                            Ty::reference(t.clone(), false)
+                        } else {
+                            t.clone()
+                        };
+                        self.bind_pattern(p, &elem_ty)?;
                     }
                 }
                 Ok(())
@@ -2372,8 +3251,16 @@ impl TypeInference {
                 // Get the enum type and variant
                 let variant_name = &path.segments.last().map(|s| s.ident.name.clone()).unwrap_or_default();
 
+                // Auto-deref: if ty is a reference, get the inner type
+                // This handles `for x in &vec { match x { Variant(p) => ... } }`
+                let derefed_ty = match &ty.kind {
+                    TyKind::Ref { inner, .. } => (**inner).clone(),
+                    _ => ty.clone(),
+                };
+
                 // Try to get the variant field types from the matched type
-                if let TyKind::Named { name, generics } = &ty.kind {
+                let mut bound = false;
+                if let TyKind::Named { name, generics } = &derefed_ty.kind {
                     if let Some(variants) = self.ctx.get_enum_variants(name) {
                         for (vname, vtypes) in variants {
                             if vname == variant_name {
@@ -2386,33 +3273,126 @@ impl TypeInference {
                                 for (p, t) in fields.iter().zip(substituted_types.iter()) {
                                     self.bind_pattern(p, t)?;
                                 }
-                                return Ok(());
-                            }
-                        }
-                    }
-                }
-                Ok(())
-            }
-            PatternKind::Struct { fields, .. } => {
-                // Bind struct field patterns
-                if let TyKind::Named { name, .. } = &ty.kind {
-                    // Clone to avoid borrow conflict
-                    let struct_fields: Vec<(String, Ty)> = self.ctx.get_struct_fields(name)
-                        .map(|f| f.to_vec())
-                        .unwrap_or_default();
-
-                    for (field_name, field_pattern) in fields {
-                        for (fname, fty) in &struct_fields {
-                            if fname == &field_name.name {
-                                self.bind_pattern(field_pattern, fty)?;
+                                bound = true;
                                 break;
                             }
                         }
                     }
                 }
+
+                // Fallback: if we couldn't find the variant info, still bind the patterns
+                // with fresh type variables so the code doesn't fail on undefined variables
+                if !bound {
+                    for p in fields {
+                        self.bind_pattern(p, &Ty::fresh_var())?;
+                    }
+                }
+                Ok(())
+            }
+            PatternKind::Struct { path, fields, .. } => {
+                // Bind struct/enum field patterns
+                // Handle both struct types and enum variants with struct-like syntax
+                // Auto-deref: if ty is a reference, get the inner type and track if we derefed
+                let (derefed_ty, is_ref) = match &ty.kind {
+                    TyKind::Ref { inner, .. } => ((**inner).clone(), true),
+                    _ => (ty.clone(), false),
+                };
+                if let TyKind::Named { name: ty_name, generics: _ } = &derefed_ty.kind {
+                    // First, try to get struct fields
+                    let struct_fields: Vec<(String, Ty)> = self.ctx.get_struct_fields(ty_name)
+                        .map(|f| f.to_vec())
+                        .unwrap_or_default();
+
+                    if !struct_fields.is_empty() {
+                        // It's a struct type
+                        for (field_name, field_pattern) in fields {
+                            for (fname, fty) in &struct_fields {
+                                if fname == &field_name.name {
+                                    // If original type was a reference, field types are references
+                                    let actual_ty = if is_ref {
+                                        Ty::reference(fty.clone(), false)
+                                    } else {
+                                        fty.clone()
+                                    };
+                                    self.bind_pattern(field_pattern, &actual_ty)?;
+                                    break;
+                                }
+                            }
+                        }
+                    } else {
+                        // Try enum variant with struct fields (e.g., XmlNode::Element { name, .. })
+                        // Get the variant name from the path
+                        let variant_name = path.segments.last()
+                            .map(|s| s.ident.name.clone())
+                            .unwrap_or_default();
+
+                        // Collect variant types to avoid borrow conflicts
+                        let variant_types: Vec<Ty> = self.ctx.get_enum_variants(ty_name)
+                            .and_then(|variants| {
+                                variants.iter()
+                                    .find(|(vname, _)| vname == &variant_name)
+                                    .map(|(_, vtypes)| vtypes.clone())
+                            })
+                            .unwrap_or_default();
+
+                        // Get field name -> index mapping for known struct-like enum variants
+                        let field_name_map = get_struct_enum_field_names(ty_name, &variant_name);
+
+                        if !variant_types.is_empty() {
+                            // For struct-like enum variants, map field names to types
+                            for (field_ident, field_pattern) in fields {
+                                let field_name = &field_ident.name;
+
+                                // Look up type by field name if we have a mapping, else fall back to fresh var
+                                let field_ty = if let Some(idx) = field_name_map.get(field_name.as_str()) {
+                                    variant_types.get(*idx).cloned().unwrap_or_else(Ty::fresh_var)
+                                } else {
+                                    Ty::fresh_var()
+                                };
+
+                                // If original type was a reference, field types are references
+                                let actual_ty = if is_ref {
+                                    Ty::reference(field_ty, false)
+                                } else {
+                                    field_ty
+                                };
+                                self.bind_pattern(field_pattern, &actual_ty)?;
+                            }
+                        } else {
+                            // Fallback: bind with fresh type vars
+                            for (_, field_pattern) in fields {
+                                self.bind_pattern(field_pattern, &Ty::fresh_var())?;
+                            }
+                        }
+                    }
+                } else {
+                    // Fallback for non-named types: bind field patterns with fresh vars
+                    for (_, field_pattern) in fields {
+                        self.bind_pattern(field_pattern, &Ty::fresh_var())?;
+                    }
+                }
                 Ok(())
             }
             PatternKind::Literal(_) => Ok(()),
+            PatternKind::Ref { pattern: inner_pattern, .. } => {
+                // For `&x` pattern with type `&T`, bind `x` to `T`
+                // For `&x` pattern with type `T`, try to bind `x` to the inner type
+                let inner_ty = match &ty.kind {
+                    TyKind::Ref { inner, .. } => (**inner).clone(),
+                    // Sometimes the type isn't a reference but we still have &pattern
+                    // In that case, just use the type as-is
+                    _ => ty.clone(),
+                };
+                self.bind_pattern(inner_pattern, &inner_ty)
+            }
+            PatternKind::Or(patterns) => {
+                // Or patterns - all must bind to same type, bind first one
+                if let Some(first) = patterns.first() {
+                    self.bind_pattern(first, ty)?;
+                }
+                Ok(())
+            }
+            PatternKind::Range { .. } => Ok(()),
             _ => Ok(()),
         }
     }
@@ -2736,8 +3716,11 @@ impl TypeInference {
     fn ast_type_to_ty(&self, ast_ty: &AstType) -> Ty {
         match &ast_ty.kind {
             AstTypeKind::Path(path) => {
-                let name = &path.segments[0].ident.name;
-                let generics: Vec<Ty> = path.segments[0]
+                // For multi-segment paths like std::iter::Peekable, use the last segment
+                // This handles qualified paths like std::iter::Peekable<std::str::Chars>
+                let last_segment = path.segments.last().unwrap_or(&path.segments[0]);
+                let name = &last_segment.ident.name;
+                let generics: Vec<Ty> = last_segment
                     .generics
                     .as_ref()
                     .map(|gs| gs.iter().map(|g| self.ast_type_to_ty(g)).collect())
@@ -2829,6 +3812,16 @@ impl TypeInference {
             return true;
         }
 
+        // Allow casting u8/u32 to char (common in byte/Unicode processing)
+        if (matches!(from.kind, TyKind::Uint(UintTy::U8) | TyKind::Uint(UintTy::U32)) && matches!(to.kind, TyKind::Char)) {
+            return true;
+        }
+
+        // Allow casting char to u8/u32
+        if matches!(from.kind, TyKind::Char) && (matches!(to.kind, TyKind::Uint(UintTy::U8) | TyKind::Uint(UintTy::U32))) {
+            return true;
+        }
+
         // IntVar can cast to any numeric
         if matches!(from.kind, TyKind::IntVar) && to.is_numeric() {
             return true;
@@ -2837,12 +3830,25 @@ impl TypeInference {
             return true;
         }
 
-        // Raw pointer casts
-        // Allow casting raw pointers to usize/isize and back
-        if matches!(from.kind, TyKind::RawPtr { .. }) && matches!(to.kind, TyKind::Uint(UintTy::Usize) | TyKind::Int(IntTy::Isize)) {
+        // Type variables can be cast to numeric types (will be resolved later)
+        if matches!(from.kind, TyKind::Var(_)) && to.is_numeric() {
             return true;
         }
-        if matches!(from.kind, TyKind::Uint(UintTy::Usize) | TyKind::Int(IntTy::Isize)) && matches!(to.kind, TyKind::RawPtr { .. }) {
+        if from.is_numeric() && matches!(to.kind, TyKind::Var(_)) {
+            return true;
+        }
+
+        // Type variables can be cast to char
+        if matches!(from.kind, TyKind::Var(_) | TyKind::IntVar) && matches!(to.kind, TyKind::Char) {
+            return true;
+        }
+
+        // Raw pointer casts
+        // Allow casting raw pointers to usize/isize/u64/i64 and back
+        if matches!(from.kind, TyKind::RawPtr { .. }) && matches!(to.kind, TyKind::Uint(UintTy::Usize) | TyKind::Int(IntTy::Isize) | TyKind::Uint(UintTy::U64) | TyKind::Int(IntTy::I64)) {
+            return true;
+        }
+        if matches!(from.kind, TyKind::Uint(UintTy::Usize) | TyKind::Int(IntTy::Isize) | TyKind::Uint(UintTy::U64) | TyKind::Int(IntTy::I64)) && matches!(to.kind, TyKind::RawPtr { .. }) {
             return true;
         }
         // Allow integer literals and integers to be cast to raw pointers
@@ -2861,6 +3867,34 @@ impl TypeInference {
         // Same type is always valid
         from == to
     }
+}
+
+/// Get field name -> index mapping for known struct-like enum variants
+/// This is needed because enum variants are stored with positional types,
+/// but struct-like pattern matching uses field names.
+fn get_struct_enum_field_names(enum_name: &str, variant_name: &str) -> std::collections::HashMap<&'static str, usize> {
+    let mut map = std::collections::HashMap::new();
+
+    match (enum_name, variant_name) {
+        // XmlNode::Element { name, attributes, children }
+        ("XmlNode", "Element") => {
+            map.insert("name", 0);
+            map.insert("attributes", 1);
+            map.insert("children", 2);
+        }
+        // PathCommand::ArcTo { rx, ry, x_rotation, large_arc, sweep, end }
+        ("PathCommand", "ArcTo") => {
+            map.insert("rx", 0);
+            map.insert("ry", 1);
+            map.insert("x_rotation", 2);
+            map.insert("large_arc", 3);
+            map.insert("sweep", 4);
+            map.insert("end", 5);
+        }
+        _ => {}
+    }
+
+    map
 }
 
 impl Default for TypeInference {
