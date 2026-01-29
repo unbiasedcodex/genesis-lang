@@ -561,6 +561,21 @@ impl IrBuilder {
         name
     }
 
+    /// Add a global byte string constant and return its name
+    pub fn add_bytes_constant(&mut self, value: &[u8]) -> String {
+        let name = format!(".bytes.{}", self.next_string);
+        self.next_string += 1;
+
+        self.module.globals.push(Global {
+            name: name.clone(),
+            ty: IrType::Array(Box::new(IrType::I8), value.len()),
+            init: Some(Constant::Bytes(value.to_vec())),
+            is_const: true,
+        });
+
+        name
+    }
+
     /// Emit a global string reference (pointer to the first byte)
     pub fn global_string_ptr(&mut self, global_name: &str) -> VReg {
         self.emit_with_result(InstrKind::GlobalRef(global_name.to_string()))

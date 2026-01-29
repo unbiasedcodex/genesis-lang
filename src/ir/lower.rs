@@ -2064,7 +2064,9 @@ impl Lowerer {
                     Literal::Float(f) => Some((super::types::Constant::Float(*f), IrType::F64)),
                     Literal::Bool(b) => Some((super::types::Constant::Bool(*b), IrType::Bool)),
                     Literal::String(s) => Some((super::types::Constant::String(s.clone()), IrType::ptr(IrType::I8))),
+                    Literal::ByteString(bytes) => Some((super::types::Constant::Bytes(bytes.clone()), IrType::ptr(IrType::I8))),
                     Literal::Char(c) => Some((super::types::Constant::Int(*c as i64), IrType::I64)),
+                    Literal::ByteChar(b) => Some((super::types::Constant::Int(*b as i64), IrType::I8)),
                 }
             }
             // Support negative numbers: -42, -3.14
@@ -2096,6 +2098,7 @@ impl Lowerer {
                         super::types::Constant::Float32(_) => IrType::F32,
                         super::types::Constant::Bool(_) => IrType::Bool,
                         super::types::Constant::String(_) => IrType::ptr(IrType::I8),
+                        super::types::Constant::Bytes(_) => IrType::ptr(IrType::I8),
                         super::types::Constant::Null => IrType::I64, // Default pointer size
                         super::types::Constant::Array(_) => IrType::I64, // Simplified
                         super::types::Constant::Struct(_) => IrType::I64, // Simplified
@@ -3946,7 +3949,7 @@ impl Lowerer {
                 struct_ptr
             }
 
-            ExprKind::MethodCall { receiver, method, args } => {
+            ExprKind::MethodCall { receiver, method, type_args: _, args } => {
                 // Check if receiver is a trait object (dyn Trait)
                 let receiver_ty = self.expr_types.get(&receiver.span).cloned();
 
@@ -4915,9 +4918,19 @@ impl Lowerer {
                 self.vreg_types.insert(vreg, IrType::I64);
                 vreg
             }
+            Literal::ByteChar(b) => {
+                let vreg = self.builder.const_int(*b as i64);
+                self.vreg_types.insert(vreg, IrType::I8);
+                vreg
+            }
             Literal::String(s) => {
                 // Create a global string constant and return pointer to it
                 let global_name = self.builder.add_string_constant(s);
+                self.builder.global_string_ptr(&global_name)
+            }
+            Literal::ByteString(bytes) => {
+                // Create a global byte string constant and return pointer to it
+                let global_name = self.builder.add_bytes_constant(bytes);
                 self.builder.global_string_ptr(&global_name)
             }
         }
@@ -5019,7 +5032,9 @@ impl Lowerer {
                 Literal::Float(_) => IrType::F64,
                 Literal::Bool(_) => IrType::Bool,
                 Literal::Char(_) => IrType::I64,
+                Literal::ByteChar(_) => IrType::I8,
                 Literal::String(_) => IrType::Ptr(Box::new(IrType::I8)),
+                Literal::ByteString(_) => IrType::Ptr(Box::new(IrType::I8)),
             },
             ExprKind::Path(path) => {
                 // Look up variable type

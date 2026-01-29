@@ -1692,6 +1692,16 @@ impl<'ctx> LLVMCodegen<'ctx> {
                 let global = self.builder.build_global_string_ptr(s, "str").unwrap();
                 global.as_pointer_value().into()
             }
+            Constant::Bytes(bytes) => {
+                // Create a global byte array
+                let i8_type = self.context.i8_type();
+                let byte_values: Vec<_> = bytes.iter().map(|b| i8_type.const_int(*b as u64, false)).collect();
+                let array_val = i8_type.const_array(&byte_values);
+                let global = self.module.add_global(array_val.get_type(), None, "bytes");
+                global.set_initializer(&array_val);
+                global.set_constant(true);
+                global.as_pointer_value().into()
+            }
             Constant::Array(_) => {
                 // TODO: Array constants
                 self.context.i64_type().const_int(0, false).into()

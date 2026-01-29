@@ -296,6 +296,7 @@ pub enum Constant {
     Bool(bool),
     Null,
     String(String),
+    Bytes(Vec<u8>),
     Array(Vec<Constant>),
     Struct(Vec<Constant>),
 }
@@ -309,6 +310,17 @@ impl fmt::Display for Constant {
             Constant::Bool(v) => write!(f, "{}", if *v { "true" } else { "false" }),
             Constant::Null => write!(f, "null"),
             Constant::String(s) => write!(f, "{:?}", s),
+            Constant::Bytes(bytes) => {
+                write!(f, "b\"")?;
+                for b in bytes {
+                    if *b >= 0x20 && *b < 0x7F {
+                        write!(f, "{}", *b as char)?;
+                    } else {
+                        write!(f, "\\x{:02x}", b)?;
+                    }
+                }
+                write!(f, "\"")
+            }
             Constant::Array(elems) => {
                 write!(f, "[")?;
                 for (i, e) in elems.iter().enumerate() {
