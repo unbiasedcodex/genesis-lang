@@ -49,6 +49,8 @@ pub struct Parser<'src> {
     lookahead: Vec<Token>,
     /// Path to the source file (for resolving external modules)
     source_path: Option<std::path::PathBuf>,
+    /// When true, suppress struct literal parsing (inside if/while/for conditions)
+    restrict_struct_literals: bool,
 }
 
 /// Parsed attributes for structs and enums
@@ -75,6 +77,7 @@ impl<'src> Parser<'src> {
             errors: Vec::new(),
             lookahead: Vec::new(),
             source_path: None,
+            restrict_struct_literals: false,
         }
     }
 
@@ -1433,6 +1436,14 @@ impl<'src> Parser<'src> {
         self.parse_assignment()
     }
 
+    fn parse_expr_no_struct(&mut self) -> ParseResult<Expr> {
+        let prev = self.restrict_struct_literals;
+        self.restrict_struct_literals = true;
+        let result = self.parse_expr();
+        self.restrict_struct_literals = prev;
+        result
+    }
+
     fn parse_assignment(&mut self) -> ParseResult<Expr> {
         let expr = self.parse_range()?;
 
@@ -2010,7 +2021,7 @@ impl<'src> Parser<'src> {
                 if let ExprKind::Path(ref path) = expr.kind {
                     // Peek ahead to see if this looks like a struct literal
                     // It's a struct literal if we see { ident : or { ident , or { ident } or { }
-                    if self.is_struct_literal_start() {
+                    if !self.restrict_struct_literals && self.is_struct_literal_start() {
                         let struct_path = path.clone();
                         self.advance(); // consume {
                         let mut fields = Vec::new();
@@ -2628,7 +2639,7 @@ impl<'src> Parser<'src> {
         if self.consume(TokenKind::Let) {
             let pattern = self.parse_pattern()?;
             self.expect(TokenKind::Eq)?;
-            let expr = self.parse_expr()?;
+            let expr = self.parse_expr_no_struct()?;
             let then_branch = self.parse_block()?;
 
             let else_branch = if self.consume(TokenKind::Else) {
@@ -2657,7 +2668,7 @@ impl<'src> Parser<'src> {
         }
 
         // Regular if expression
-        let condition = self.parse_expr()?;
+        let condition = self.parse_expr_no_struct()?;
         let then_branch = self.parse_block()?;
 
         let else_branch = if self.consume(TokenKind::Else) {
@@ -2754,7 +2765,7 @@ impl<'src> Parser<'src> {
         if self.consume(TokenKind::Let) {
             let pattern = self.parse_pattern()?;
             self.expect(TokenKind::Eq)?;
-            let expr = self.parse_expr()?;
+            let expr = self.parse_expr_no_struct()?;
             let body = self.parse_block()?;
 
             return Ok(Expr {
@@ -2769,7 +2780,7 @@ impl<'src> Parser<'src> {
         }
 
         // Regular while
-        let condition = self.parse_expr()?;
+        let condition = self.parse_expr_no_struct()?;
         let body = self.parse_block()?;
 
         Ok(Expr {
@@ -2787,7 +2798,7 @@ impl<'src> Parser<'src> {
         self.expect(TokenKind::For)?;
         let pattern = self.parse_pattern()?;
         self.expect(TokenKind::In)?;
-        let iterable = self.parse_expr()?;
+        let iterable = self.parse_expr_no_struct()?;
         let body = self.parse_block()?;
 
         let label_ident = label.map(|name| Ident {
