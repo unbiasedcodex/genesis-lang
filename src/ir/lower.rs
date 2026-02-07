@@ -467,10 +467,10 @@ impl Lowerer {
                     "i16" => IrType::I16,
                     "i32" => IrType::I32,
                     "i64" | "isize" => IrType::I64,
-                    "u8" => IrType::I8,
-                    "u16" => IrType::I16,
-                    "u32" => IrType::I32,
-                    "u64" | "usize" => IrType::I64,
+                    "u8" => IrType::U8,
+                    "u16" => IrType::U16,
+                    "u32" => IrType::U32,
+                    "u64" | "usize" => IrType::U64,
                     "f32" => IrType::F32,
                     "f64" => IrType::F64,
                     "bool" => IrType::Bool,
@@ -4428,18 +4428,20 @@ impl Lowerer {
                     // Same type - no cast needed
                     _ if source_ty == target_ty => val,
 
-                    // Integer to integer
-                    (IrType::I8 | IrType::I16 | IrType::I32 | IrType::I64,
-                     IrType::I8 | IrType::I16 | IrType::I32 | IrType::I64) => {
+                    // Integer to integer (signed and unsigned)
+                    (IrType::I8 | IrType::I16 | IrType::I32 | IrType::I64 |
+                     IrType::U8 | IrType::U16 | IrType::U32 | IrType::U64,
+                     IrType::I8 | IrType::I16 | IrType::I32 | IrType::I64 |
+                     IrType::U8 | IrType::U16 | IrType::U32 | IrType::U64) => {
                         // Check if extending or truncating
                         let src_bits = self.type_bits(&source_ty);
                         let dst_bits = self.type_bits(&target_ty);
                         if dst_bits > src_bits {
-                            // Extend - check if signed or unsigned
-                            if self.is_signed_type(ty) {
-                                self.builder.sext(val, target_ty)
-                            } else {
+                            // Extend - use zero extend for unsigned source, sign extend for signed
+                            if source_ty.is_unsigned() || !self.is_signed_type(ty) {
                                 self.builder.zext(val, target_ty)
+                            } else {
+                                self.builder.sext(val, target_ty)
                             }
                         } else if dst_bits < src_bits {
                             // Truncate
@@ -4450,22 +4452,26 @@ impl Lowerer {
                     }
 
                     // Pointer to integer
-                    (IrType::Ptr(_), IrType::I64 | IrType::I32) => {
+                    (IrType::Ptr(_), IrType::I64 | IrType::I32 | IrType::U64 | IrType::U32) => {
                         self.builder.ptrtoint(val, target_ty.clone())
                     }
 
                     // Integer to pointer
-                    (IrType::I64 | IrType::I32, IrType::Ptr(_)) => {
+                    (IrType::I64 | IrType::I32 | IrType::U64 | IrType::U32, IrType::Ptr(_)) => {
                         self.builder.inttoptr(val, target_ty.clone())
                     }
 
                     // Float to integer
-                    (IrType::F32 | IrType::F64, IrType::I8 | IrType::I16 | IrType::I32 | IrType::I64) => {
+                    (IrType::F32 | IrType::F64,
+                     IrType::I8 | IrType::I16 | IrType::I32 | IrType::I64 |
+                     IrType::U8 | IrType::U16 | IrType::U32 | IrType::U64) => {
                         self.builder.fptosi(val, target_ty)
                     }
 
                     // Integer to float
-                    (IrType::I8 | IrType::I16 | IrType::I32 | IrType::I64, IrType::F32 | IrType::F64) => {
+                    (IrType::I8 | IrType::I16 | IrType::I32 | IrType::I64 |
+                     IrType::U8 | IrType::U16 | IrType::U32 | IrType::U64,
+                     IrType::F32 | IrType::F64) => {
                         self.builder.sitofp(val, target_ty)
                     }
 
@@ -4476,7 +4482,9 @@ impl Lowerer {
                     }
 
                     // Boolean to integer
-                    (IrType::Bool, IrType::I8 | IrType::I16 | IrType::I32 | IrType::I64) => {
+                    (IrType::Bool,
+                     IrType::I8 | IrType::I16 | IrType::I32 | IrType::I64 |
+                     IrType::U8 | IrType::U16 | IrType::U32 | IrType::U64) => {
                         self.builder.zext(val, target_ty)
                     }
 
@@ -4995,6 +5003,28 @@ impl Lowerer {
                 self.vreg_types.insert(coerced, IrType::I64);
                 (left, coerced)
             }
+            // Unsigned integer coercions (use zero extend)
+            (Some(IrType::U32), Some(IrType::U64)) => {
+                let coerced = self.builder.zext(left, IrType::U64);
+                self.vreg_types.insert(coerced, IrType::U64);
+                (coerced, right)
+            }
+            (Some(IrType::U64), Some(IrType::U32)) => {
+                let coerced = self.builder.zext(right, IrType::U64);
+                self.vreg_types.insert(coerced, IrType::U64);
+                (left, coerced)
+            }
+            // Mixed signed/unsigned - promote to unsigned of wider type
+            (Some(IrType::I32), Some(IrType::U64)) | (Some(IrType::U32), Some(IrType::I64)) => {
+                let coerced = self.builder.zext(left, IrType::U64);
+                self.vreg_types.insert(coerced, IrType::U64);
+                (coerced, right)
+            }
+            (Some(IrType::U64), Some(IrType::I32)) | (Some(IrType::I64), Some(IrType::U32)) => {
+                let coerced = self.builder.zext(right, IrType::U64);
+                self.vreg_types.insert(coerced, IrType::U64);
+                (left, coerced)
+            }
             (Some(IrType::I16), Some(IrType::I32)) | (Some(IrType::I16), Some(IrType::I64)) => {
                 let target = right_ty.clone().unwrap();
                 let coerced = self.builder.sext(left, target.clone());
@@ -5007,6 +5037,18 @@ impl Lowerer {
                 self.vreg_types.insert(coerced, target);
                 (left, coerced)
             }
+            (Some(IrType::U16), Some(IrType::U32)) | (Some(IrType::U16), Some(IrType::U64)) => {
+                let target = right_ty.clone().unwrap();
+                let coerced = self.builder.zext(left, target.clone());
+                self.vreg_types.insert(coerced, target);
+                (coerced, right)
+            }
+            (Some(IrType::U32), Some(IrType::U16)) | (Some(IrType::U64), Some(IrType::U16)) => {
+                let target = left_ty.clone().unwrap();
+                let coerced = self.builder.zext(right, target.clone());
+                self.vreg_types.insert(coerced, target);
+                (left, coerced)
+            }
             (Some(IrType::I8), Some(ty)) if ty.is_int() => {
                 let coerced = self.builder.sext(left, ty.clone());
                 self.vreg_types.insert(coerced, ty.clone());
@@ -5014,6 +5056,16 @@ impl Lowerer {
             }
             (Some(ty), Some(IrType::I8)) if ty.is_int() => {
                 let coerced = self.builder.sext(right, ty.clone());
+                self.vreg_types.insert(coerced, ty.clone());
+                (left, coerced)
+            }
+            (Some(IrType::U8), Some(ty)) if ty.is_int() => {
+                let coerced = self.builder.zext(left, ty.clone());
+                self.vreg_types.insert(coerced, ty.clone());
+                (coerced, right)
+            }
+            (Some(ty), Some(IrType::U8)) if ty.is_int() => {
+                let coerced = self.builder.zext(right, ty.clone());
                 self.vreg_types.insert(coerced, ty.clone());
                 (left, coerced)
             }
@@ -5065,10 +5117,10 @@ impl Lowerer {
     /// Get the number of bits for an IR type
     fn type_bits(&self, ty: &IrType) -> u32 {
         match ty {
-            IrType::I8 => 8,
-            IrType::I16 => 16,
-            IrType::I32 => 32,
-            IrType::I64 => 64,
+            IrType::I8 | IrType::U8 => 8,
+            IrType::I16 | IrType::U16 => 16,
+            IrType::I32 | IrType::U32 => 32,
+            IrType::I64 | IrType::U64 => 64,
             IrType::F32 => 32,
             IrType::F64 => 64,
             IrType::Bool => 1,
@@ -5080,10 +5132,10 @@ impl Lowerer {
     /// Get the size in bytes for an IR type
     fn _type_size(&self, ty: &IrType) -> usize {
         match ty {
-            IrType::I8 | IrType::Bool => 1,
-            IrType::I16 => 2,
-            IrType::I32 | IrType::F32 => 4,
-            IrType::I64 | IrType::F64 | IrType::Ptr(_) => 8,
+            IrType::I8 | IrType::U8 | IrType::Bool => 1,
+            IrType::I16 | IrType::U16 => 2,
+            IrType::I32 | IrType::U32 | IrType::F32 => 4,
+            IrType::I64 | IrType::U64 | IrType::F64 | IrType::Ptr(_) => 8,
             IrType::Struct(fields) | IrType::StructPacked(fields) => {
                 // Sum of all field sizes (simplified, doesn't account for alignment)
                 fields.iter().map(|f| self._type_size(f)).sum()
@@ -5122,11 +5174,17 @@ impl Lowerer {
 
         // Only handle integer conversions for now
         match (&source_ty, target_ty) {
-            (IrType::I8 | IrType::I16 | IrType::I32 | IrType::I64,
-             IrType::I8 | IrType::I16 | IrType::I32 | IrType::I64) => {
+            (IrType::I8 | IrType::I16 | IrType::I32 | IrType::I64 |
+             IrType::U8 | IrType::U16 | IrType::U32 | IrType::U64,
+             IrType::I8 | IrType::I16 | IrType::I32 | IrType::I64 |
+             IrType::U8 | IrType::U16 | IrType::U32 | IrType::U64) => {
                 if dst_bits > src_bits {
-                    // Extend - use zero extend for now (unsigned)
-                    self.builder.zext(val, target_ty.clone())
+                    // Extend - use zero extend for unsigned, sign extend for signed
+                    if source_ty.is_unsigned() {
+                        self.builder.zext(val, target_ty.clone())
+                    } else {
+                        self.builder.sext(val, target_ty.clone())
+                    }
                 } else if dst_bits < src_bits {
                     // Truncate
                     self.builder.trunc(val, target_ty.clone())
@@ -13090,6 +13148,10 @@ impl Lowerer {
         });
         let is_float = left_is_float || right_is_float;
 
+        // Check if either operand is unsigned - if so, use unsigned operations
+        let is_unsigned = self.vreg_types.get(&left).map_or(false, |ty| ty.is_unsigned())
+            || self.vreg_types.get(&right).map_or(false, |ty| ty.is_unsigned());
+
         match op {
             BinaryOp::Add => {
                 if is_float {
@@ -13115,13 +13177,21 @@ impl Lowerer {
             BinaryOp::Div => {
                 if is_float {
                     self.builder.fdiv(left, right)
+                } else if is_unsigned {
+                    self.builder.udiv(left, right)
                 } else {
                     self.builder.sdiv(left, right)
                 }
             }
             BinaryOp::Rem => {
-                // Float modulo would require fmod call, use integer rem for now
-                self.builder.srem(left, right)
+                if is_float {
+                    // Float modulo would require fmod call, use integer rem for now
+                    self.builder.srem(left, right)
+                } else if is_unsigned {
+                    self.builder.urem(left, right)
+                } else {
+                    self.builder.srem(left, right)
+                }
             }
             BinaryOp::Eq => {
                 let result = if is_float {
@@ -13144,6 +13214,8 @@ impl Lowerer {
             BinaryOp::Lt => {
                 let result = if is_float {
                     self.builder.fcmp(CmpOp::Slt, left, right)
+                } else if is_unsigned {
+                    self.builder.icmp(CmpOp::Ult, left, right)
                 } else {
                     self.builder.icmp(CmpOp::Slt, left, right)
                 };
@@ -13153,6 +13225,8 @@ impl Lowerer {
             BinaryOp::Le => {
                 let result = if is_float {
                     self.builder.fcmp(CmpOp::Sle, left, right)
+                } else if is_unsigned {
+                    self.builder.icmp(CmpOp::Ule, left, right)
                 } else {
                     self.builder.icmp(CmpOp::Sle, left, right)
                 };
@@ -13162,6 +13236,8 @@ impl Lowerer {
             BinaryOp::Gt => {
                 let result = if is_float {
                     self.builder.fcmp(CmpOp::Sgt, left, right)
+                } else if is_unsigned {
+                    self.builder.icmp(CmpOp::Ugt, left, right)
                 } else {
                     self.builder.icmp(CmpOp::Sgt, left, right)
                 };
@@ -13171,6 +13247,8 @@ impl Lowerer {
             BinaryOp::Ge => {
                 let result = if is_float {
                     self.builder.fcmp(CmpOp::Sge, left, right)
+                } else if is_unsigned {
+                    self.builder.icmp(CmpOp::Uge, left, right)
                 } else {
                     self.builder.icmp(CmpOp::Sge, left, right)
                 };
@@ -13183,7 +13261,13 @@ impl Lowerer {
             BinaryOp::BitOr => self.builder.or(left, right),
             BinaryOp::BitXor => self.builder.xor(left, right),
             BinaryOp::Shl => self.builder.shl(left, right),
-            BinaryOp::Shr => self.builder.ashr(left, right),
+            BinaryOp::Shr => {
+                if is_unsigned {
+                    self.builder.lshr(left, right)
+                } else {
+                    self.builder.ashr(left, right)
+                }
+            }
         }
     }
 

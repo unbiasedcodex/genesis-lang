@@ -40,6 +40,14 @@ pub enum IrType {
     I32,
     /// 64-bit signed integer
     I64,
+    /// 8-bit unsigned integer
+    U8,
+    /// 16-bit unsigned integer
+    U16,
+    /// 32-bit unsigned integer
+    U32,
+    /// 64-bit unsigned integer
+    U64,
     /// 32-bit float
     F32,
     /// 64-bit float
@@ -72,10 +80,10 @@ impl IrType {
     pub fn size(&self) -> usize {
         match self {
             IrType::Void => 0,
-            IrType::Bool | IrType::I8 => 1,
-            IrType::I16 => 2,
-            IrType::I32 | IrType::F32 => 4,
-            IrType::I64 | IrType::F64 => 8,
+            IrType::Bool | IrType::I8 | IrType::U8 => 1,
+            IrType::I16 | IrType::U16 => 2,
+            IrType::I32 | IrType::U32 | IrType::F32 => 4,
+            IrType::I64 | IrType::U64 | IrType::F64 => 8,
             IrType::Ptr(_) => 8, // Assume 64-bit pointers
             IrType::Array(elem, size) => elem.size() * size,
             IrType::Struct(fields) | IrType::StructPacked(fields) => fields.iter().map(|f| f.size()).sum(),
@@ -87,10 +95,10 @@ impl IrType {
     pub fn alignment(&self) -> usize {
         match self {
             IrType::Void => 1,
-            IrType::Bool | IrType::I8 => 1,
-            IrType::I16 => 2,
-            IrType::I32 | IrType::F32 => 4,
-            IrType::I64 | IrType::F64 | IrType::Ptr(_) => 8,
+            IrType::Bool | IrType::I8 | IrType::U8 => 1,
+            IrType::I16 | IrType::U16 => 2,
+            IrType::I32 | IrType::U32 | IrType::F32 => 4,
+            IrType::I64 | IrType::U64 | IrType::F64 | IrType::Ptr(_) => 8,
             IrType::Array(elem, _) => elem.alignment(),
             IrType::Struct(fields) => fields.iter().map(|f| f.alignment()).max().unwrap_or(1),
             IrType::StructPacked(_) => 1, // Packed structs have alignment of 1
@@ -105,7 +113,13 @@ impl IrType {
 
     /// Is this type an integer?
     pub fn is_int(&self) -> bool {
-        matches!(self, IrType::I8 | IrType::I16 | IrType::I32 | IrType::I64)
+        matches!(self, IrType::I8 | IrType::I16 | IrType::I32 | IrType::I64
+                     | IrType::U8 | IrType::U16 | IrType::U32 | IrType::U64)
+    }
+
+    /// Is this type an unsigned integer?
+    pub fn is_unsigned(&self) -> bool {
+        matches!(self, IrType::U8 | IrType::U16 | IrType::U32 | IrType::U64)
     }
 
     /// Is this type a float?
@@ -133,10 +147,10 @@ impl fmt::Display for IrType {
         match self {
             IrType::Void => write!(f, "void"),
             IrType::Bool => write!(f, "i1"),
-            IrType::I8 => write!(f, "i8"),
-            IrType::I16 => write!(f, "i16"),
-            IrType::I32 => write!(f, "i32"),
-            IrType::I64 => write!(f, "i64"),
+            IrType::I8 | IrType::U8 => write!(f, "i8"),
+            IrType::I16 | IrType::U16 => write!(f, "i16"),
+            IrType::I32 | IrType::U32 => write!(f, "i32"),
+            IrType::I64 | IrType::U64 => write!(f, "i64"),
             IrType::F32 => write!(f, "f32"),
             IrType::F64 => write!(f, "f64"),
             IrType::Ptr(inner) => write!(f, "*{}", inner),

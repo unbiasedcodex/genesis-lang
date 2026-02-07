@@ -697,6 +697,10 @@ impl IrBuilder {
         self.emit_with_result(InstrKind::SDiv(a, b))
     }
 
+    pub fn udiv(&mut self, a: VReg, b: VReg) -> VReg {
+        self.emit_with_result(InstrKind::UDiv(a, b))
+    }
+
     pub fn srem(&mut self, a: VReg, b: VReg) -> VReg {
         self.emit_with_result(InstrKind::SRem(a, b))
     }
