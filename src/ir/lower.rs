@@ -1589,6 +1589,14 @@ impl Lowerer {
         // Generate specialized generic functions
         self.generate_specialized_functions();
 
+        // Pre-register all top-level constants so they're available to all functions
+        // (regardless of declaration order in the file)
+        for item in &program.items {
+            if let Item::Const(c) = item {
+                self.lower_const_def(c);
+            }
+        }
+
         // Second pass: generate code for all non-generic functions
         for item in &program.items {
             match item {
@@ -1605,9 +1613,8 @@ impl Lowerer {
                 Item::Enum(_) => {
                     // Enum definitions don't generate code directly
                 }
-                Item::Const(c) => {
-                    // Lower global constants
-                    self.lower_const_def(c);
+                Item::Const(_) => {
+                    // Already registered in pre-pass above
                 }
                 Item::Impl(i) => {
                     // Get the impl type name for resolving Self
