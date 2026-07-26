@@ -42,7 +42,7 @@ fn main() -> i32 {
 
 ```bash
 # Requirements: Rust 1.70+, LLVM 18
-git clone https://github.com/user/genesis-lang
+git clone https://github.com/unbiasedcodex/genesis-lang
 cd genesis-lang
 LLVM_SYS_180_PREFIX=/usr/lib/llvm-18 cargo build --release
 ```
@@ -258,7 +258,7 @@ See [Freestanding Documentation](docs/freestanding.md) for details.
 
 ## Project Status
 
-Genesis is functional and actively developed. The compiler is written in Rust (~25,000 lines) and compiles to native code via LLVM.
+Genesis is functional and actively developed. The compiler is written in Rust (~53,000 lines) and compiles to native code via LLVM. It is the language behind the Genesis OS kernel and runtime (~76,000 lines of Genesis code combined).
 
 | Component | Status |
 |-----------|--------|
@@ -272,7 +272,9 @@ Genesis is functional and actively developed. The compiler is written in Rust (~
 | Package manager | Planned |
 | Self-hosting compiler | Planned |
 
-**Tests**: 184 passing | **Examples**: 102 files
+Since v0.1.2, driven by kernel and browser development, the language has also gained: unsigned integer types, enums with payloads, nested structs, fixed arrays (`[value; count]`, `.len()`), `if let` / `while let`, grouped imports, derive attributes, nested generics, byte strings/chars, const in blocks and qualified module constants, nested module resolution, and IR-level optimizations.
+
+**Tests**: 184+ passing | **Examples**: 102+ files
 
 ---
 

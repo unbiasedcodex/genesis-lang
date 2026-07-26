@@ -4,6 +4,31 @@ All notable changes to Genesis Lang.
 
 ---
 
+## [Unreleased]
+
+Language and codegen work driven by Genesis OS kernel and browser development.
+
+### New Features
+
+- **Unsigned integer types**: u8-u64 with correct unsigned operations
+- **Enums with payloads**: unit enums, data enums, match on enums and integer literals
+- **Nested structs** and compound lvalue assignment for structs and arrays
+- **Fixed arrays**: repeat syntax `[value; count]`, `.len()` intrinsic, pass-by-pointer in calls
+- **Byte strings/chars**: codegen and global bytes constants
+- **Parser additions**: `if let`, `while let`, grouped imports, derive attributes, nested generics
+- **Constants**: const inside blocks, qualified module constants (`mymod::ADDR`), pre-registered top-level constants
+- **Modules**: nested module resolution
+- **IR-level optimizations**
+
+### Bug Fixes
+
+- Suppressed struct literal parsing in `if`/`while`/`for` conditions
+- Improved type inference and LLVM code generation
+- Hoisted alloca instructions to entry block
+- Fixed early return handling
+
+---
+
 ## [0.1.2] - 2026-01-07
 
 Bug fixes for kernel development compiler issues.
