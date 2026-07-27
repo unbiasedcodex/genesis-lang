@@ -1264,12 +1264,20 @@ impl<'ctx> LLVMCodegen<'ctx> {
                             let fn_type = i8_ptr_ty.fn_type(&[i8_ptr_ty.into(), i32_ty.into(), i64_ty.into()], false);
                             self.module.add_function("memset", fn_type, None)
                         }
-                        _ => {
-                            // Unknown external function - store dummy value and return
-                            if let Some(vreg) = instr.result {
-                                self.vreg_values.insert(vreg.0, self.context.i64_type().const_int(0, false).into());
-                            }
-                            return;
+                        name => {
+                            // Calls to functions that were never defined used to
+                            // yield a dummy zero, which then blew up far away
+                            // (inkwell "expected PointerValue", or "ret i64 0"
+                            // from a pointer-returning function). Name the
+                            // callee so the missing definition is findable.
+                            let caller = self
+                                .current_fn
+                                .map(|f| f.get_name().to_string_lossy().into_owned())
+                                .unwrap_or_else(|| "<unknown>".to_string());
+                            panic!(
+                                "codegen: call to undefined function `{}` in `{}`                                  (missing definition or unsupported stdlib method)",
+                                name, caller
+                            );
                         }
                     }
                 };
