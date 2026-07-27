@@ -2050,6 +2050,26 @@ impl Lowerer {
             }
         }
 
+        // The callee may live under a different module path than the caller
+        // qualified it with: `url::url_parse` called from net::http resolves
+        // to `net::http::url::url_parse`, while it is defined as
+        // `net::url::url_parse`. Match a defined function whose qualified
+        // name ends with the candidate, preferring the longest candidate and,
+        // among equals, the shortest (least nested) definition.
+        for start in 1..segments.len() {
+            let candidate = segments[start..].join("::");
+            let needle = format!("::{}", candidate);
+            let mut matches: Vec<&String> = self
+                .fn_signatures
+                .keys()
+                .filter(|k| k.ends_with(&needle))
+                .collect();
+            if !matches.is_empty() {
+                matches.sort_by_key(|k| (k.matches("::").count(), k.len(), k.as_str().to_string()));
+                return matches[0].clone();
+            }
+        }
+
         name.to_string()
     }
 
