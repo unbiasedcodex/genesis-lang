@@ -3553,6 +3553,21 @@ impl<'src> Parser<'src> {
         let start = self.current.span.start;
         let first = self.parse_pattern_atom()?;
 
+        // Range patterns: '0'..='9', 1..=9, 1..10
+        if self.check(TokenKind::DotDotEq) || self.check(TokenKind::DotDot) {
+            let inclusive = self.check(TokenKind::DotDotEq);
+            self.advance();
+            let end = self.parse_pattern_atom()?;
+            return Ok(Pattern {
+                kind: PatternKind::Range {
+                    start: Some(Box::new(first)),
+                    end: Some(Box::new(end)),
+                    inclusive,
+                },
+                span: Span::new(start, self.previous.span.end),
+            });
+        }
+
         // Check for or patterns: A | B | C
         if self.check(TokenKind::Or) {
             let mut patterns = vec![first];
@@ -3709,6 +3724,17 @@ impl<'src> Parser<'src> {
                         break;
                     }
 
+                    // `ref` / `ref mut` bindings: under reference counting a
+                    // binding already shares the value, so the modifier only
+                    // affects mutability
+                    let by_ref = self.check(TokenKind::Ident) && self.text(&self.current) == "ref";
+                    let ref_mut = if by_ref {
+                        self.advance();
+                        self.consume(TokenKind::Mut)
+                    } else {
+                        false
+                    };
+
                     let field_name = self.parse_ident()?;
 
                     // Check for field: pattern (field renaming) vs just field (shorthand)
@@ -3720,7 +3746,7 @@ impl<'src> Parser<'src> {
                             span: field_name.span,
                             kind: PatternKind::Ident {
                                 name: field_name.clone(),
-                                mutable: false,
+                                mutable: ref_mut,
                             },
                         }
                     };
