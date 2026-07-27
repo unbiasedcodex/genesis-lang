@@ -2213,6 +2213,22 @@ impl Lowerer {
                         self.lower_function_with_prefix(f, prefix);
                     }
                 }
+                Item::Impl(i) => {
+                    // Methods of a type declared inside a module. They are
+                    // lowered under the type name (Type::method), matching
+                    // top-level impls; call sites that qualify them with the
+                    // module path resolve through resolve_callee.
+                    let impl_type_name = self.ast_type_to_type_name(&i.self_type);
+                    self.current_impl_type = Some(impl_type_name.clone());
+                    for impl_item in &i.items {
+                        if let ast::ImplItem::Function(f) = impl_item {
+                            if !self.is_generic_fn(f) {
+                                self.lower_function_with_prefix(f, &impl_type_name);
+                            }
+                        }
+                    }
+                    self.current_impl_type = None;
+                }
                 Item::Mod(m) => {
                     // Recursively lower functions from nested modules
                     if let Some(ref nested_items) = m.items {
@@ -2253,6 +2269,22 @@ impl Lowerer {
                     if !self.is_generic_fn(f) {
                         self.lower_function_with_prefix(f, prefix);
                     }
+                }
+                Item::Impl(i) => {
+                    // Methods of a type declared inside a module. They are
+                    // lowered under the type name (Type::method), matching
+                    // top-level impls; call sites that qualify them with the
+                    // module path resolve through resolve_callee.
+                    let impl_type_name = self.ast_type_to_type_name(&i.self_type);
+                    self.current_impl_type = Some(impl_type_name.clone());
+                    for impl_item in &i.items {
+                        if let ast::ImplItem::Function(f) = impl_item {
+                            if !self.is_generic_fn(f) {
+                                self.lower_function_with_prefix(f, &impl_type_name);
+                            }
+                        }
+                    }
+                    self.current_impl_type = None;
                 }
                 Item::Mod(m) => {
                     if let Some(ref nested_items) = m.items {
