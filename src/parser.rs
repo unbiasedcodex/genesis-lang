@@ -4139,7 +4139,7 @@ impl<'src> Parser<'src> {
                     loop {
                         if self.check(TokenKind::Label) {
                             let bound_token = self.current.clone();
-                            let bound_text = bound_self.span_text(token.span);
+                            let bound_text = self.span_text(bound_token.span);
                             self.advance();
                             bounds.push(Type {
                                 kind: TypeKind::Path(Path {
