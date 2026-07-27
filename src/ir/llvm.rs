@@ -1858,11 +1858,27 @@ impl<'ctx> LLVMCodegen<'ctx> {
     }
 
     /// Get value for a VReg
+    ///
+    /// A missing entry means some instruction produced no value during
+    /// lowering (typically an unsupported construct that still type-checked).
+    /// Falling back to a zero integer used to hide that: the value then
+    /// surfaced far away as an inkwell panic ("expected PointerValue") or an
+    /// LLVM verification failure ("ret i64 0" from a pointer-returning
+    /// function). Name the function instead so the source is findable.
     fn get_vreg(&self, vreg: VReg) -> BasicValueEnum<'ctx> {
-        self.vreg_values
-            .get(&vreg.0)
-            .copied()
-            .unwrap_or_else(|| self.context.i64_type().const_int(0, false).into())
+        match self.vreg_values.get(&vreg.0).copied() {
+            Some(value) => value,
+            None => {
+                let fn_name = self
+                    .current_fn
+                    .map(|f| f.get_name().to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "<unknown>".to_string());
+                panic!(
+                    "codegen: value %{} was never defined in function `{}`                      (an unsupported construct lowered to nothing)",
+                    vreg.0, fn_name
+                );
+            }
+        }
     }
 
     /// Get the LLVM IR as a string
