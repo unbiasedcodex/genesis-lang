@@ -1308,7 +1308,7 @@ impl<'src> Parser<'src> {
         } else if self.check(TokenKind::FloatLiteral) {
             let token = self.advance();
             let text = self.text(&token);
-            let value: f64 = text.parse().unwrap_or(0.0);
+            let value: f64 = parse_float(text).unwrap_or(0.0);
             Ok(ast::MacroToken::FloatLit(value, span))
         } else if self.check(TokenKind::StringLiteral) {
             let token = self.advance();
@@ -2250,7 +2250,7 @@ impl<'src> Parser<'src> {
         if self.check(TokenKind::FloatLiteral) {
             let token = self.advance();
             let text = self.text(&token);
-            let value: f64 = text.parse().map_err(|_| ParseError::Custom {
+            let value: f64 = parse_float(text).map_err(|_| ParseError::Custom {
                 message: format!("invalid float literal: {}", text),
                 span: token.span,
             })?;
@@ -4062,6 +4062,19 @@ fn parse_byte_string(s: &str) -> Vec<u8> {
     result
 }
 
+/// Strip an optional float suffix (f32/f64, with optional leading underscore)
+/// and any digit separators, so `0.0_f64` and `1_000.5` parse as f64.
+fn parse_float(s: &str) -> Result<f64, std::num::ParseFloatError> {
+    let mut text = s;
+    for suffix in ["_f64", "_f32", "f64", "f32"] {
+        if let Some(stripped) = text.strip_suffix(suffix) {
+            text = stripped;
+            break;
+        }
+    }
+    text.replace('_', "").parse()
+}
+
 fn parse_char(s: &str) -> char {
     // Unicode replacement character used for invalid/malformed char literals
     const REPLACEMENT: char = '\u{FFFD}';
@@ -4075,6 +4088,15 @@ fn parse_char(s: &str) -> char {
     }
 
     if s.starts_with('\\') {
+        // Unicode escape: \u{HEX}
+        if let Some(rest) = s.strip_prefix("\\u{") {
+            if let Some(hex) = rest.strip_suffix('}') {
+                return u32::from_str_radix(hex, 16)
+                    .ok()
+                    .and_then(char::from_u32)
+                    .unwrap_or(REPLACEMENT);
+            }
+        }
         match s.chars().nth(1) {
             Some('n') => '\n',
             Some('r') => '\r',

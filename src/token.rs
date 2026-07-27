@@ -39,8 +39,8 @@ pub enum TokenKind {
     IntLiteral,
 
     /// Float literal: 3.14, 1e10, 2.5e-3
-    #[regex(r"[0-9][0-9_]*\.[0-9][0-9_]*([eE][+-]?[0-9][0-9_]*)?")]
-    #[regex(r"[0-9][0-9_]*[eE][+-]?[0-9][0-9_]*")]
+    #[regex(r"[0-9][0-9_]*\.[0-9][0-9_]*([eE][+-]?[0-9][0-9_]*)?(_?(f32|f64))?")]
+    #[regex(r"[0-9][0-9_]*[eE][+-]?[0-9][0-9_]*(_?(f32|f64))?")]
     FloatLiteral,
 
     /// String literal: "hello", "with \"escapes\""
@@ -52,7 +52,7 @@ pub enum TokenKind {
     ByteStringLiteral,
 
     /// Character literal: 'a', '\n'
-    #[regex(r"'([^'\\]|\\.)'")]
+    #[regex(r"'([^'\\]|\\u\{[0-9a-fA-F]{1,6}\}|\\.)'")]
     CharLiteral,
 
     /// Byte character literal: b'a', b'\n'
