@@ -2030,6 +2030,29 @@ impl Lowerer {
         }
     }
 
+    /// Resolve a callee name against the functions actually defined.
+    ///
+    /// Call sites qualify names with the calling module's own path, which
+    /// does not always match where the callee was defined (a sibling module,
+    /// or an impl collected without a prefix). Fall back to the longest
+    /// matching suffix, which keeps `a::b::Type::new` resolving to
+    /// `Type::new` while still preferring an exact match.
+    fn resolve_callee(&self, name: &str) -> String {
+        if self.fn_signatures.contains_key(name) {
+            return name.to_string();
+        }
+
+        let segments: Vec<&str> = name.split("::").collect();
+        for start in 1..segments.len() {
+            let candidate = segments[start..].join("::");
+            if self.fn_signatures.contains_key(&candidate) {
+                return candidate;
+            }
+        }
+
+        name.to_string()
+    }
+
     /// Lower a constant definition to a global variable
     fn lower_const_def(&mut self, c: &ast::ConstDef) {
         self.lower_const_def_with_prefix(c, None);
@@ -3819,6 +3842,7 @@ impl Lowerer {
                     arg_vregs_and_tys.into_iter().map(|(v, _)| v).collect()
                 };
 
+                let final_name = self.resolve_callee(&final_name);
                 self.builder.call(&final_name, arg_vregs)
             }
 
@@ -4066,6 +4090,7 @@ impl Lowerer {
                     all_args.extend(arg_vregs);
 
                     // Call the method function with qualified name
+                    let qualified_method = self.resolve_callee(&qualified_method);
                     self.builder.call(&qualified_method, all_args)
                 }
             }
