@@ -963,6 +963,18 @@ impl<'ctx> LLVMCodegen<'ctx> {
                 let ptr_val = self.get_vreg(*ptr).into_pointer_value();
                 let value = self.get_vreg(*val);
                 self.builder.build_store(ptr_val, value).unwrap();
+
+                // Slots are often created as i64 before the stored type is
+                // known (a match result slot, say). Once a pointer is stored,
+                // record that so later loads read a pointer instead of an
+                // integer that would then be used as one.
+                if value.is_pointer_value() && self.alloca_regs.contains(&ptr.0) {
+                    let ptr_ty = self.context.ptr_type(AddressSpace::default()).into();
+                    self.vreg_types.insert(ptr.0, ptr_ty);
+                    if let Some(pointee) = self.vreg_types.get(&val.0).copied() {
+                        self.pointee_types.insert(ptr.0, pointee);
+                    }
+                }
                 None
             }
             InstrKind::VolatileLoad(ptr) => {
