@@ -67,10 +67,17 @@ struct ParsedAttrs {
 impl<'src> Parser<'src> {
     /// Create a new parser
     pub fn new(source: &'src str) -> Self {
+        Self::new_with_span_base(source, 0)
+    }
+
+    /// Create a parser whose spans are shifted by `span_base`, so that the
+    /// spans of separately parsed files never overlap
+    pub fn new_with_span_base(source: &'src str, span_base: usize) -> Self {
         let mut lexer = Lexer::new(source);
+        lexer.set_span_base(span_base);
         let current = lexer.next_token().unwrap_or(Token::new(
             TokenKind::Eof,
-            Span::new(source.len(), source.len()),
+            Span::new(span_base + source.len(), span_base + source.len()),
         ));
         let previous = current.clone();
 
@@ -4359,10 +4366,15 @@ fn parse_byte_char(s: &str) -> u8 {
 
 /// Parse source code into an AST
 pub fn parse(source: &str) -> (Program, Vec<ParseError>) {
-    let mut parser = Parser::new(source);
+    parse_with_span_base(source, 0)
+}
+
+/// Parse source whose spans are shifted by `span_base`
+pub fn parse_with_span_base(source: &str, span_base: usize) -> (Program, Vec<ParseError>) {
+    let mut parser = Parser::new_with_span_base(source, span_base);
     let program = parser.parse_program().unwrap_or(Program {
         items: Vec::new(),
-        span: Span::new(0, source.len()),
+        span: Span::new(span_base, span_base + source.len()),
     });
     let errors = parser.errors.clone();
     (program, errors)
@@ -4395,6 +4407,16 @@ pub fn resolve_external_modules(program: &mut Program, base_path: &std::path::Pa
 
 /// Recursively resolve modules in a list of items
 /// max_depth prevents infinite recursion from circular module dependencies
+/// Hand out a unique span range per source file.
+///
+/// Files start well above any realistic root-file size, and each reserves its
+/// own length, so spans stay unique across the whole compilation.
+fn next_span_base(source_len: usize) -> usize {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static NEXT_BASE: AtomicUsize = AtomicUsize::new(1_000_000_000);
+    NEXT_BASE.fetch_add(source_len + 1, Ordering::Relaxed)
+}
+
 fn resolve_modules_recursive(
     items: &mut Vec<Item>,
     base_path: &std::path::Path,
@@ -4435,7 +4457,13 @@ fn resolve_modules_recursive(
                     match std::fs::read_to_string(&mod_path) {
                         Ok(source) => {
                             let source: &'static str = Box::leak(source.into_boxed_str());
-                            let (mut mod_program, parse_errors) = parse(source);
+                            // Give this file its own span range: type
+                            // information is keyed by span, and every file is
+                            // lexed from zero, so without a per-file base the
+                            // types of same-offset expressions collide.
+                            let span_base = next_span_base(source.len());
+                            let (mut mod_program, parse_errors) =
+                                parse_with_span_base(source, span_base);
                             errors.extend(parse_errors);
 
                             // Recursively resolve any nested modules in this module

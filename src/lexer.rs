@@ -30,6 +30,10 @@ pub struct Lexer<'src> {
     inner: logos::Lexer<'src, TokenKind>,
     peeked: Option<Token>,
     errors: Vec<LexerError>,
+    /// Added to every span, so that spans from different source files never
+    /// overlap. Type information is keyed by span, and each file is lexed
+    /// from offset zero, so without this two files collide.
+    span_base: usize,
 }
 
 impl<'src> Lexer<'src> {
@@ -37,6 +41,7 @@ impl<'src> Lexer<'src> {
     pub fn new(source: &'src str) -> Self {
         Self {
             source,
+            span_base: 0,
             inner: TokenKind::lexer(source),
             peeked: None,
             errors: Vec::new(),
@@ -72,7 +77,10 @@ impl<'src> Lexer<'src> {
             match self.inner.next() {
                 Some(Ok(kind)) => {
                     let span = self.inner.span();
-                    return Some(Token::new(kind, Span::new(span.start, span.end)));
+                    return Some(Token::new(
+                        kind,
+                        Span::new(self.span_base + span.start, self.span_base + span.end),
+                    ));
                 }
                 Some(Err(())) => {
                     // Skip invalid tokens and record error
@@ -82,11 +90,16 @@ impl<'src> Lexer<'src> {
                 }
                 None => {
                     // End of input - return EOF token
-                    let pos = self.source.len();
+                    let pos = self.span_base + self.source.len();
                     return Some(Token::new(TokenKind::Eof, Span::new(pos, pos)));
                 }
             }
         }
+    }
+
+    /// Shift every span this lexer produces by `base`
+    pub fn set_span_base(&mut self, base: usize) {
+        self.span_base = base;
     }
 
     /// Collect all tokens into a vector
