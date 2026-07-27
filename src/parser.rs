@@ -1480,6 +1480,70 @@ impl<'src> Parser<'src> {
     }
 
     /// Parse a macro invocation in expression position: `name!(args)` or `name![args]` or `name!{args}`
+    /// Desugar `matches!(value, pattern)` / `matches!(value, pattern if guard)`
+    /// into `match value { pattern => true, _ => false }`
+    fn parse_matches_macro(&mut self, name: Ident) -> ParseResult<Expr> {
+        let start = name.span.start;
+        self.expect(TokenKind::Not)?;
+
+        let (open, close) = if self.consume(TokenKind::LParen) {
+            (TokenKind::LParen, TokenKind::RParen)
+        } else if self.consume(TokenKind::LBracket) {
+            (TokenKind::LBracket, TokenKind::RBracket)
+        } else {
+            self.expect(TokenKind::LBrace)?;
+            (TokenKind::LBrace, TokenKind::RBrace)
+        };
+        let _ = open;
+
+        let scrutinee = self.parse_expr()?;
+        self.expect(TokenKind::Comma)?;
+        let pattern = self.parse_pattern()?;
+
+        let guard = if self.consume(TokenKind::If) {
+            Some(self.parse_expr()?)
+        } else {
+            None
+        };
+
+        self.expect(close)?;
+        let span = Span::new(start, self.previous.span.end);
+
+        let true_expr = Expr {
+            kind: ExprKind::Literal(Literal::Bool(true)),
+            span,
+        };
+        let false_expr = Expr {
+            kind: ExprKind::Literal(Literal::Bool(false)),
+            span,
+        };
+        let wildcard = Pattern {
+            kind: PatternKind::Wildcard,
+            span,
+        };
+
+        Ok(Expr {
+            kind: ExprKind::Match {
+                scrutinee: Box::new(scrutinee),
+                arms: vec![
+                    MatchArm {
+                        pattern,
+                        guard,
+                        body: true_expr,
+                        span,
+                    },
+                    MatchArm {
+                        pattern: wildcard,
+                        guard: None,
+                        body: false_expr,
+                        span,
+                    },
+                ],
+            },
+            span,
+        })
+    }
+
     fn parse_macro_invocation(&mut self, name: Ident) -> ParseResult<ast::MacroInvocation> {
         let start = name.span.start;
 
@@ -2711,6 +2775,13 @@ impl<'src> Parser<'src> {
                         span: name_token.span,
                     };
                     self.advance(); // consume name
+
+                    // matches!(expr, pattern [if guard]) desugars to a match
+                    // expression so it needs no macro machinery downstream
+                    if name.name == "matches" {
+                        return self.parse_matches_macro(name);
+                    }
+
                     let invocation = self.parse_macro_invocation(name)?;
                     return Ok(Expr {
                         span: invocation.span,
@@ -3657,10 +3728,21 @@ impl<'src> Parser<'src> {
             });
         }
 
-        // Binding pattern (possibly mutable) or path pattern (enum variant)
+        // Binding pattern (possibly mutable) or path pattern (enum variant).
+        // `ref` is accepted and ignored: reference counting means a binding
+        // already shares the value.
+        let by_ref = self.consume(TokenKind::Ref);
         let mutable = self.consume(TokenKind::Mut);
 
-        // If mutable, it's definitely just an ident binding
+        if by_ref {
+            let name = self.parse_ident()?;
+            return Ok(Pattern {
+                span: Span::new(start, self.previous.span.end),
+                kind: PatternKind::Ident { name, mutable },
+            });
+        }
+
+        // If mutable (and not already returned above), it is an ident binding
         if mutable {
             let name = self.parse_ident()?;
             return Ok(Pattern {
@@ -3727,9 +3809,7 @@ impl<'src> Parser<'src> {
                     // `ref` / `ref mut` bindings: under reference counting a
                     // binding already shares the value, so the modifier only
                     // affects mutability
-                    let by_ref = self.check(TokenKind::Ident) && self.text(&self.current) == "ref";
-                    let ref_mut = if by_ref {
-                        self.advance();
+                    let ref_mut = if self.consume(TokenKind::Ref) {
                         self.consume(TokenKind::Mut)
                     } else {
                         false
