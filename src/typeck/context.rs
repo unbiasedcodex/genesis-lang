@@ -5952,6 +5952,17 @@ impl TypeContext {
         if sig.module.is_none() {
             sig.module = self.current_module.clone();
         }
+
+        // Functions declared in a module are stored as `module::name`, but
+        // code inside that module calls them unqualified. Expose the bare
+        // name as well, first registration winning, mirroring how types are
+        // registered and the flat namespace lowering uses.
+        if let Some(bare) = name.rsplit("::").next() {
+            if bare != name && !self.functions.contains_key(bare) {
+                self.functions.insert(bare.to_string(), sig.clone());
+            }
+        }
+
         self.functions.insert(name.to_string(), sig);
     }
 
