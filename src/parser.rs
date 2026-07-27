@@ -2533,7 +2533,7 @@ impl<'src> Parser<'src> {
         // Check for labeled loops: 'label: loop/while/for
         if self.check(TokenKind::Label) {
             let label_token = self.current.clone();
-            let label_text = label_self.span_text(token.span);
+            let label_text = self.span_text(label_token.span);
             // Remove the leading quote from the label
             let label_name = label_text[1..].to_string();
             self.advance();
@@ -2570,7 +2570,7 @@ impl<'src> Parser<'src> {
             // Check for optional label: break 'label
             let label = if self.check(TokenKind::Label) {
                 let label_token = self.current.clone();
-                let label_text = label_self.span_text(token.span);
+                let label_text = self.span_text(label_token.span);
                 let label_name = label_text[1..].to_string();
                 self.advance();
                 Some(Ident {
@@ -2601,7 +2601,7 @@ impl<'src> Parser<'src> {
             // Check for optional label: continue 'label
             let label = if self.check(TokenKind::Label) {
                 let label_token = self.current.clone();
-                let label_text = label_self.span_text(token.span);
+                let label_text = self.span_text(label_token.span);
                 let label_name = label_text[1..].to_string();
                 self.advance();
                 Some(Ident {
@@ -3435,7 +3435,7 @@ impl<'src> Parser<'src> {
             // Optional lifetime: &'a
             let _lifetime = if self.check(TokenKind::Label) {
                 let label_token = self.current.clone();
-                let label_text = label_self.span_text(token.span);
+                let label_text = self.span_text(label_token.span);
                 self.advance();
                 Some(label_text.to_string())
             } else {
@@ -4024,7 +4024,7 @@ impl<'src> Parser<'src> {
                         // Check for lifetime argument: 'a, 'b, etc.
                         if self.check(TokenKind::Label) {
                             let label_token = self.current.clone();
-                            let label_text = label_self.span_text(token.span);
+                            let label_text = self.span_text(label_token.span);
                             self.advance();
                             // Create a type representing the lifetime
                             types.push(Type {
@@ -4122,7 +4122,7 @@ impl<'src> Parser<'src> {
             // Check for lifetime parameter: 'a, 'b, etc.
             if self.check(TokenKind::Label) {
                 let label_token = self.current.clone();
-                let label_text = label_self.span_text(token.span);
+                let label_text = self.span_text(label_token.span);
                 // Remove leading quote from lifetime name
                 let lifetime_name = label_text[1..].to_string();
                 self.advance();
