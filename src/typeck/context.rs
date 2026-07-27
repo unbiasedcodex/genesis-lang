@@ -5720,32 +5720,50 @@ impl TypeContext {
 
     /// Register a struct type
     pub fn register_struct(&mut self, name: &str, generics: Vec<String>, generic_defaults: HashMap<String, Ty>, fields: Vec<(String, Ty)>, is_pub: bool, module: Option<String>) {
-        self.types.insert(
-            name.to_string(),
-            TypeDef {
-                name: name.to_string(),
-                generics,
-                generic_defaults,
-                kind: TypeDefKind::Struct { fields },
-                is_pub,
-                module,
-            },
-        );
+        let def = TypeDef {
+            name: name.to_string(),
+            generics,
+            generic_defaults,
+            kind: TypeDefKind::Struct { fields },
+            is_pub,
+            module,
+        };
+
+        // A type declared in a module is stored as `module::Name`,
+        // but code inside that module refers to it unqualified, so
+        // also expose the bare name. First registration wins, which
+        // matches the single flat namespace lowering already uses.
+        if let Some(bare) = name.rsplit("::").next() {
+            if bare != name && !self.types.contains_key(bare) {
+                self.types.insert(bare.to_string(), def.clone());
+            }
+        }
+
+        self.types.insert(name.to_string(), def);
     }
 
     /// Register an enum type
     pub fn register_enum(&mut self, name: &str, generics: Vec<String>, generic_defaults: HashMap<String, Ty>, variants: Vec<(String, Vec<Ty>)>, is_pub: bool, module: Option<String>) {
-        self.types.insert(
-            name.to_string(),
-            TypeDef {
-                name: name.to_string(),
-                generics,
-                generic_defaults,
-                kind: TypeDefKind::Enum { variants },
-                is_pub,
-                module,
-            },
-        );
+        let def = TypeDef {
+            name: name.to_string(),
+            generics,
+            generic_defaults,
+            kind: TypeDefKind::Enum { variants },
+            is_pub,
+            module,
+        };
+
+        // A type declared in a module is stored as `module::Name`,
+        // but code inside that module refers to it unqualified, so
+        // also expose the bare name. First registration wins, which
+        // matches the single flat namespace lowering already uses.
+        if let Some(bare) = name.rsplit("::").next() {
+            if bare != name && !self.types.contains_key(bare) {
+                self.types.insert(bare.to_string(), def.clone());
+            }
+        }
+
+        self.types.insert(name.to_string(), def);
     }
 
     /// Register a type alias

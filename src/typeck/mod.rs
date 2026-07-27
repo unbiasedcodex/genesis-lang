@@ -298,9 +298,24 @@ impl TypeChecker {
                     crate::ast::Item::Const(c) => {
                         self.inference.register_const_with_prefix(c, &name);
                     }
-                    _ => {
-                        // Recursively handle other items
+                    crate::ast::Item::Impl(i) => {
+                        // Methods of types declared in the module
+                        self.inference.register_impl(i);
                     }
+                    crate::ast::Item::Trait(t) => {
+                        self.inference.register_trait(t);
+                    }
+                    crate::ast::Item::TypeAlias(t) => {
+                        self.inference.register_type_alias(t);
+                    }
+                    crate::ast::Item::Use(u) => {
+                        self.register_use(u);
+                    }
+                    crate::ast::Item::Mod(nested) => {
+                        // Nested modules bring their own definitions
+                        self.register_mod(nested);
+                    }
+                    _ => {}
                 }
             }
 
