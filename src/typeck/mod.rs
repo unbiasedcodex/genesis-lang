@@ -195,7 +195,18 @@ impl TypeChecker {
             Item::Trait(t) => self.check_trait(t),
             Item::Const(c) => self.check_const(c),
             Item::Actor(a) => self.check_actor(a),
-            Item::TypeAlias(_) | Item::Use(_) | Item::Mod(_) | Item::Macro(_) => Ok(()),
+            Item::Mod(m) => {
+                // Check the bodies of inline modules too: skipping them left
+                // every expression inside a module without a recorded type,
+                // so lowering could not resolve method calls on them.
+                if let Some(ref items) = m.items {
+                    for item in items {
+                        self.check_item(item)?;
+                    }
+                }
+                Ok(())
+            }
+            Item::TypeAlias(_) | Item::Use(_) | Item::Macro(_) => Ok(()),
         }
     }
 
