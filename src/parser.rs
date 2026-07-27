@@ -51,6 +51,8 @@ pub struct Parser<'src> {
     source_path: Option<std::path::PathBuf>,
     /// When true, suppress struct literal parsing (inside if/while/for conditions)
     restrict_struct_literals: bool,
+    /// Attributes parsed ahead of the item they annotate
+    pending_attrs: ParsedAttrs,
 }
 
 /// Parsed attributes for structs and enums
@@ -58,6 +60,8 @@ pub struct Parser<'src> {
 struct ParsedAttrs {
     repr: Option<ReprAttr>,
     derive: Option<DeriveAttr>,
+    /// Set by #[cfg(test)]: the annotated item is dropped
+    cfg_disabled: bool,
 }
 
 impl<'src> Parser<'src> {
@@ -78,6 +82,7 @@ impl<'src> Parser<'src> {
             lookahead: Vec::new(),
             source_path: None,
             restrict_struct_literals: false,
+            pending_attrs: ParsedAttrs::default(),
         }
     }
 
@@ -216,8 +221,9 @@ impl<'src> Parser<'src> {
         let mut items = Vec::new();
 
         while !self.is_at_end() {
-            match self.parse_item() {
-                Ok(item) => items.push(item),
+            match self.parse_item_opt() {
+                Ok(Some(item)) => items.push(item),
+                Ok(None) => {} // dropped by #[cfg(test)]
                 Err(e) => {
                     self.errors.push(e);
                     self.synchronize();
@@ -258,10 +264,75 @@ impl<'src> Parser<'src> {
         }
     }
 
-    /// Parse a top-level item
-    fn parse_item(&mut self) -> ParseResult<Item> {
-        // Parse optional attributes: #[repr(C)], #[derive(Clone, Debug)], etc.
-        let attrs = self.parse_attributes()?;
+    /// Consume the rest of an attribute up to its closing bracket.
+    /// Returns true if the attribute body mentions `test`.
+    fn skip_attribute_body_has_test(&mut self) -> bool {
+        let mut depth: usize = 1; // the opening [ was already consumed
+        let mut has_test = false;
+        while !self.is_at_end() {
+            let token = self.advance();
+            match token.kind {
+                TokenKind::LBracket => depth += 1,
+                TokenKind::RBracket => {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                TokenKind::Ident => {
+                    if self.text(&token) == "test" {
+                        has_test = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        has_test
+    }
+
+    /// Skip a whole item at the token level (used for #[cfg(test)] items,
+    /// whose bodies may use syntax the parser does not support)
+    fn skip_item_tokens(&mut self) {
+        let mut depth: usize = 0;
+        while !self.is_at_end() {
+            let token = self.advance();
+            match token.kind {
+                TokenKind::LBrace => depth += 1,
+                TokenKind::RBrace => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return;
+                    }
+                }
+                TokenKind::Semicolon => {
+                    if depth == 0 {
+                        return;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Parse a top-level item, or nothing if it was disabled by #[cfg(test)]
+    fn parse_item_opt(&mut self) -> ParseResult<Option<Item>> {
+        if self.peek_attrs_disabled()? {
+            self.skip_item_tokens();
+            return Ok(None);
+        }
+        self.parse_item_inner().map(Some)
+    }
+
+    /// Parse attributes, reporting whether they disable the item.
+    /// Attributes are stashed for the following parse_item_inner call.
+    fn peek_attrs_disabled(&mut self) -> ParseResult<bool> {
+        self.pending_attrs = self.parse_attributes()?;
+        Ok(self.pending_attrs.cfg_disabled)
+    }
+
+    /// Parse a top-level item (attributes must already be in pending_attrs)
+    fn parse_item_inner(&mut self) -> ParseResult<Item> {
+        let attrs = std::mem::take(&mut self.pending_attrs);
 
         let is_pub = self.consume(TokenKind::Pub);
         let is_async = self.consume(TokenKind::Async);
@@ -359,11 +430,17 @@ impl<'src> Parser<'src> {
                     self.expect(TokenKind::RParen)?;
                     attrs.derive = Some(DeriveAttr { traits });
                 }
+                "cfg" => {
+                    // Only cfg(test) is meaningful here: drop the item
+                    if self.skip_attribute_body_has_test() {
+                        attrs.cfg_disabled = true;
+                    }
+                    continue;
+                }
                 _ => {
-                    return Err(ParseError::Custom {
-                        message: format!("unknown attribute '{}', expected 'repr' or 'derive'", attr_name.name),
-                        span: attr_name.span,
-                    });
+                    // Unknown attributes (e.g. #[test], #[inline]) are ignored
+                    self.skip_attribute_body_has_test();
+                    continue;
                 }
             }
 
@@ -692,6 +769,12 @@ impl<'src> Parser<'src> {
         let mut items = Vec::new();
 
         while !self.check(TokenKind::RBrace) && !self.is_at_end() {
+            // Members may carry attributes (e.g. #[test]); #[cfg(test)] drops them
+            let member_attrs = self.parse_attributes()?;
+            if member_attrs.cfg_disabled {
+                self.skip_item_tokens();
+                continue;
+            }
             let is_pub = self.consume(TokenKind::Pub);
             let is_async = self.consume(TokenKind::Async);
             match self.current.kind {
@@ -1062,7 +1145,9 @@ impl<'src> Parser<'src> {
         let items = if self.consume(TokenKind::LBrace) {
             let mut items = Vec::new();
             while !self.check(TokenKind::RBrace) && !self.is_at_end() {
-                items.push(self.parse_item()?);
+                if let Some(item) = self.parse_item_opt()? {
+                    items.push(item);
+                }
             }
             self.expect(TokenKind::RBrace)?;
             Some(items)
