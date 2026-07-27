@@ -1614,8 +1614,18 @@ impl<'ctx> LLVMCodegen<'ctx> {
         };
 
         // Store result if instruction has one
-        if let (Some(vreg), Some(value)) = (instr.result, result) {
-            self.vreg_values.insert(vreg.0, value);
+        match (instr.result, result) {
+            (Some(vreg), Some(value)) => {
+                self.vreg_values.insert(vreg.0, value);
+            }
+            (Some(vreg), None) => {
+                // The instruction yielded nothing (a call to a void function,
+                // say). Unit is modelled as an i64 zero so that consumers -
+                // such as a match arm storing its "result" - stay defined.
+                self.vreg_values
+                    .insert(vreg.0, self.context.i64_type().const_int(0, false).into());
+            }
+            _ => {}
         }
     }
 
