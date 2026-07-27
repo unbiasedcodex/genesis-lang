@@ -2076,6 +2076,35 @@ impl Lowerer {
                     Literal::ByteChar(b) => Some((super::types::Constant::Int(*b as i64), IrType::I8)),
                 }
             }
+            // Array literals: [1, 2, 3]
+            ExprKind::Array(elements) => {
+                let mut values = Vec::new();
+                let mut elem_ty = IrType::I64;
+                for elem in elements {
+                    let (val, ty) = self.eval_const_expr(elem)?;
+                    elem_ty = ty;
+                    values.push(val);
+                }
+                let len = values.len();
+                Some((
+                    super::types::Constant::Array(values),
+                    IrType::Array(Box::new(elem_ty), len),
+                ))
+            }
+            // Array repeat: [0; 16]
+            ExprKind::ArrayRepeat { value, count } => {
+                let (val, elem_ty) = self.eval_const_expr(value)?;
+                let (count_val, _) = self.eval_const_expr(count)?;
+                let len = match count_val {
+                    super::types::Constant::Int(n) if n >= 0 => n as usize,
+                    _ => return None,
+                };
+                let values = vec![val; len];
+                Some((
+                    super::types::Constant::Array(values),
+                    IrType::Array(Box::new(elem_ty), len),
+                ))
+            }
             // Support negative numbers: -42, -3.14
             ExprKind::Unary { op: UnaryOp::Neg, operand } => {
                 match &operand.kind {
@@ -2107,7 +2136,17 @@ impl Lowerer {
                         super::types::Constant::String(_) => IrType::ptr(IrType::I8),
                         super::types::Constant::Bytes(_) => IrType::ptr(IrType::I8),
                         super::types::Constant::Null => IrType::I64, // Default pointer size
-                        super::types::Constant::Array(_) => IrType::I64, // Simplified
+                        super::types::Constant::Array(elems) => {
+                            // Element type comes from the first entry; empty
+                            // arrays default to i64
+                            let elem_ty = match elems.first() {
+                                Some(super::types::Constant::Float(_)) => IrType::F64,
+                                Some(super::types::Constant::Float32(_)) => IrType::F32,
+                                Some(super::types::Constant::Bool(_)) => IrType::Bool,
+                                _ => IrType::I64,
+                            };
+                            IrType::Array(Box::new(elem_ty), elems.len())
+                        }
                         super::types::Constant::Struct(_) => IrType::I64, // Simplified
                     };
                     Some((cval, ir_type))

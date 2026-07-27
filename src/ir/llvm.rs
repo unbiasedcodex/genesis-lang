@@ -205,8 +205,18 @@ impl<'ctx> LLVMCodegen<'ctx> {
                 // Track type for later loads
                 self.global_types.insert(global.name.clone(), bool_type.into());
             }
+            Some(Constant::Array(elements)) => {
+                if let Some(array_val) = self.build_const_array(elements) {
+                    let array_ty = array_val.get_type();
+                    let global_val = self.module.add_global(array_ty, None, &global.name);
+                    global_val.set_initializer(&array_val);
+                    global_val.set_constant(global.is_const);
+                    // Track type for later loads
+                    self.global_types.insert(global.name.clone(), array_ty.into());
+                }
+            }
             _ => {
-                // Other globals not yet supported (Array, Struct, Null)
+                // Other globals not yet supported (Struct, Null)
             }
         }
     }
@@ -1680,6 +1690,59 @@ impl<'ctx> LLVMCodegen<'ctx> {
         }
     }
 
+    /// Build an LLVM constant array from IR constants.
+    /// The element type follows the first entry; mixed or unsupported
+    /// element kinds yield None.
+    fn build_const_array(&self, elements: &[Constant]) -> Option<inkwell::values::ArrayValue<'ctx>> {
+        match elements.first() {
+            Some(Constant::Float(_)) => {
+                let ty = self.context.f64_type();
+                let values: Vec<_> = elements
+                    .iter()
+                    .map(|c| match c {
+                        Constant::Float(f) => ty.const_float(*f),
+                        _ => ty.const_float(0.0),
+                    })
+                    .collect();
+                Some(ty.const_array(&values))
+            }
+            Some(Constant::Float32(_)) => {
+                let ty = self.context.f32_type();
+                let values: Vec<_> = elements
+                    .iter()
+                    .map(|c| match c {
+                        Constant::Float32(f) => ty.const_float(*f as f64),
+                        _ => ty.const_float(0.0),
+                    })
+                    .collect();
+                Some(ty.const_array(&values))
+            }
+            Some(Constant::Bool(_)) => {
+                let ty = self.context.bool_type();
+                let values: Vec<_> = elements
+                    .iter()
+                    .map(|c| match c {
+                        Constant::Bool(b) => ty.const_int(*b as u64, false),
+                        _ => ty.const_int(0, false),
+                    })
+                    .collect();
+                Some(ty.const_array(&values))
+            }
+            Some(Constant::Int(_)) => {
+                let ty = self.context.i64_type();
+                let values: Vec<_> = elements
+                    .iter()
+                    .map(|c| match c {
+                        Constant::Int(n) => ty.const_int(*n as u64, true),
+                        _ => ty.const_int(0, false),
+                    })
+                    .collect();
+                Some(ty.const_array(&values))
+            }
+            _ => None,
+        }
+    }
+
     /// Convert a constant to LLVM value
     fn compile_constant(&self, constant: &Constant) -> BasicValueEnum<'ctx> {
         match constant {
@@ -1702,9 +1765,22 @@ impl<'ctx> LLVMCodegen<'ctx> {
                 global.set_constant(true);
                 global.as_pointer_value().into()
             }
-            Constant::Array(_) => {
-                // TODO: Array constants
-                self.context.i64_type().const_int(0, false).into()
+            Constant::Array(elements) => {
+                // Materialize as a private constant global and hand back its
+                // pointer, mirroring how byte-string constants are emitted
+                match self.build_const_array(elements) {
+                    Some(array_val) => {
+                        let global = self.module.add_global(array_val.get_type(), None, "const_array");
+                        global.set_initializer(&array_val);
+                        global.set_constant(true);
+                        global.as_pointer_value().into()
+                    }
+                    None => self
+                        .context
+                        .ptr_type(AddressSpace::default())
+                        .const_null()
+                        .into(),
+                }
             }
             Constant::Struct(_) => {
                 // TODO: Struct constants

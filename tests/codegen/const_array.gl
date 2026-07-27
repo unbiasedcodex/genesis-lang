@@ -1,0 +1,15 @@
+// Test: global const arrays
+// Global const arrays used to lower to a stub i64 0, which crashed codegen
+// when the value was loaded (browser engine tables hit this).
+
+const TABLE: [i64; 8] = [10, 20, 30, 40, 50, 60, 70, 80];
+const ZEROS: [i64; 4] = [0; 4];
+
+fn main() -> i64 {
+    // Indexing a const table must read the real initializer
+    let a = TABLE[0];   // 10
+    let b = TABLE[7];   // 80
+    let c = ZEROS[2];   // 0
+
+    a + b + c           // 90
+}
