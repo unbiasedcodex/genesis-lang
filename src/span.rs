@@ -65,8 +65,13 @@ impl Span {
     }
 
     /// Get the source text for this span
+    ///
+    /// Spans of separately parsed files carry a per-file base offset, so a
+    /// span may not address this source at all; clamp instead of panicking.
     pub fn text<'a>(&self, source: &'a str) -> &'a str {
-        &source[self.start..self.end]
+        let start = self.start.min(source.len());
+        let end = self.end.min(source.len()).max(start);
+        &source[start..end]
     }
 }
 

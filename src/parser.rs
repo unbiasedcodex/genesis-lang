@@ -53,6 +53,8 @@ pub struct Parser<'src> {
     restrict_struct_literals: bool,
     /// Attributes parsed ahead of the item they annotate
     pending_attrs: ParsedAttrs,
+    /// Offset added to every span of this file (see new_with_span_base)
+    span_base: usize,
 }
 
 /// Parsed attributes for structs and enums
@@ -90,7 +92,16 @@ impl<'src> Parser<'src> {
             source_path: None,
             restrict_struct_literals: false,
             pending_attrs: ParsedAttrs::default(),
+            span_base,
         }
+    }
+
+    /// Source text covered by a span, accounting for this file's span base
+    fn span_text(&self, span: Span) -> &'src str {
+        let source = self.source();
+        let start = span.start.saturating_sub(self.span_base).min(source.len());
+        let end = span.end.saturating_sub(self.span_base).min(source.len());
+        &source[start..end]
     }
 
     /// Create a new parser with a source file path (for external module resolution)
@@ -217,7 +228,7 @@ impl<'src> Parser<'src> {
 
     /// Get text of a token
     fn text(&self, token: &Token) -> &'src str {
-        token.text(self.source())
+        self.span_text(token.span)
     }
 
     // ============ Top-level parsing ============
@@ -2091,7 +2102,7 @@ impl<'src> Parser<'src> {
                 let field = if self.check(TokenKind::IntLiteral) {
                     // Tuple field access: expr.0, expr.1, etc.
                     let token = self.current.clone();
-                    let name = token.span.text(self.source()).to_string();
+                    let name = self.span_text(token.span).to_string();
                     self.advance();
                     Ident {
                         name,
@@ -2103,7 +2114,7 @@ impl<'src> Parser<'src> {
                     // Keywords are valid member names after a dot
                     // (e.g. `parts.join("/")`, where join is a keyword)
                     let token = self.current.clone();
-                    let name = token.span.text(self.source()).to_string();
+                    let name = self.span_text(token.span).to_string();
                     if name.is_empty() || !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
                         return Err(ParseError::UnexpectedToken {
                             expected: "field or method name".to_string(),
@@ -2522,7 +2533,7 @@ impl<'src> Parser<'src> {
         // Check for labeled loops: 'label: loop/while/for
         if self.check(TokenKind::Label) {
             let label_token = self.current.clone();
-            let label_text = label_token.span.text(self.source());
+            let label_text = label_self.span_text(token.span);
             // Remove the leading quote from the label
             let label_name = label_text[1..].to_string();
             self.advance();
@@ -2559,7 +2570,7 @@ impl<'src> Parser<'src> {
             // Check for optional label: break 'label
             let label = if self.check(TokenKind::Label) {
                 let label_token = self.current.clone();
-                let label_text = label_token.span.text(self.source());
+                let label_text = label_self.span_text(token.span);
                 let label_name = label_text[1..].to_string();
                 self.advance();
                 Some(Ident {
@@ -2590,7 +2601,7 @@ impl<'src> Parser<'src> {
             // Check for optional label: continue 'label
             let label = if self.check(TokenKind::Label) {
                 let label_token = self.current.clone();
-                let label_text = label_token.span.text(self.source());
+                let label_text = label_self.span_text(token.span);
                 let label_name = label_text[1..].to_string();
                 self.advance();
                 Some(Ident {
@@ -3424,7 +3435,7 @@ impl<'src> Parser<'src> {
             // Optional lifetime: &'a
             let _lifetime = if self.check(TokenKind::Label) {
                 let label_token = self.current.clone();
-                let label_text = label_token.span.text(self.source());
+                let label_text = label_self.span_text(token.span);
                 self.advance();
                 Some(label_text.to_string())
             } else {
@@ -4013,7 +4024,7 @@ impl<'src> Parser<'src> {
                         // Check for lifetime argument: 'a, 'b, etc.
                         if self.check(TokenKind::Label) {
                             let label_token = self.current.clone();
-                            let label_text = label_token.span.text(self.source());
+                            let label_text = label_self.span_text(token.span);
                             self.advance();
                             // Create a type representing the lifetime
                             types.push(Type {
@@ -4111,7 +4122,7 @@ impl<'src> Parser<'src> {
             // Check for lifetime parameter: 'a, 'b, etc.
             if self.check(TokenKind::Label) {
                 let label_token = self.current.clone();
-                let label_text = label_token.span.text(self.source());
+                let label_text = label_self.span_text(token.span);
                 // Remove leading quote from lifetime name
                 let lifetime_name = label_text[1..].to_string();
                 self.advance();
@@ -4128,7 +4139,7 @@ impl<'src> Parser<'src> {
                     loop {
                         if self.check(TokenKind::Label) {
                             let bound_token = self.current.clone();
-                            let bound_text = bound_token.span.text(self.source());
+                            let bound_text = bound_self.span_text(token.span);
                             self.advance();
                             bounds.push(Type {
                                 kind: TypeKind::Path(Path {
