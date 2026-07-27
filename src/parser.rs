@@ -2026,8 +2026,25 @@ impl<'src> Parser<'src> {
                         name,
                         span: token.span,
                     }
-                } else {
+                } else if self.check(TokenKind::Ident) {
                     self.parse_ident()?
+                } else {
+                    // Keywords are valid member names after a dot
+                    // (e.g. `parts.join("/")`, where join is a keyword)
+                    let token = self.current.clone();
+                    let name = token.span.text(self.source()).to_string();
+                    if name.is_empty() || !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                        return Err(ParseError::UnexpectedToken {
+                            expected: "field or method name".to_string(),
+                            found: token.kind.clone(),
+                            span: token.span,
+                        });
+                    }
+                    self.advance();
+                    Ident {
+                        name,
+                        span: token.span,
+                    }
                 };
                 // Check for turbofish: method::<T>()
                 let type_args = if self.check(TokenKind::ColonColon) && self.peek_nth(1).kind == TokenKind::Lt {
@@ -3279,6 +3296,33 @@ impl<'src> Parser<'src> {
             return Ok(Type {
                 kind: TypeKind::TraitObject {
                     trait_name: trait_ident.name,
+                },
+                span: Span::new(start, self.previous.span.end),
+            });
+        }
+
+        // Function pointer types: fn(A, B) -> C
+        if self.consume(TokenKind::Fn) {
+            self.expect(TokenKind::LParen)?;
+            let mut params = Vec::new();
+            while !self.check(TokenKind::RParen) && !self.is_at_end() {
+                params.push(self.parse_type()?);
+                if !self.consume(TokenKind::Comma) {
+                    break;
+                }
+            }
+            self.expect(TokenKind::RParen)?;
+
+            let return_type = if self.consume(TokenKind::Arrow) {
+                Some(Box::new(self.parse_type()?))
+            } else {
+                None
+            };
+
+            return Ok(Type {
+                kind: TypeKind::FnPtr {
+                    params,
+                    return_type,
                 },
                 span: Span::new(start, self.previous.span.end),
             });
