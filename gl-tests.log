@@ -1,0 +1,7 @@
+OK   tests/codegen/asm_dollar_escape.gl
+OK   tests/codegen/asm_output.gl
+OK   tests/codegen/const_array.gl
+OK   tests/codegen/int_ptr_cast.gl
+OK   tests/codegen/module_struct_literal.gl
+OK   tests/codegen/nested_generic_field.gl
+OK   tests/codegen/type_conversion.gl
