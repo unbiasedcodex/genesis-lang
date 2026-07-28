@@ -7,17 +7,17 @@
 
 mod inner {
     pub struct Holder {
-        pub data: Vec<u8>,
-        pub palette: Option<Vec<u32>>,
         pub tag: i64,
+        pub data: Vec<u8>,
+        pub palette: Option<Vec<u32>>, // nested generics as the last field
     }
 
     impl Holder {
         pub fn new(tag: i64) -> Holder {
             Holder {
+                tag: tag,
                 data: Vec::new(),
                 palette: None,
-                tag: tag,
             }
         }
     }
