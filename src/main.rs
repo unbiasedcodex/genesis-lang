@@ -249,7 +249,11 @@ fn main() -> miette::Result<()> {
                 }
                 Err(errors) => {
                     for err in &errors {
-                        eprintln!("Type error at {:?}: {}", err.span, err.kind);
+                        eprintln!(
+                            "Type error at {}: {}",
+                            describe_span(err.span),
+                            err.kind
+                        );
                     }
                     return Err(miette::miette!("Found {} type error(s)", errors.len()));
                 }
@@ -288,7 +292,11 @@ fn main() -> miette::Result<()> {
                 }
                 Err(errors) => {
                     for err in &errors {
-                        eprintln!("Type error at {:?}: {}", err.span, err.kind);
+                        eprintln!(
+                            "Type error at {}: {}",
+                            describe_span(err.span),
+                            err.kind
+                        );
                     }
                     return Err(miette::miette!("Found {} type error(s)", errors.len()));
                 }
@@ -390,5 +398,13 @@ fn main() -> miette::Result<()> {
             println!("Goodbye!");
             Ok(())
         }
+    }
+}
+
+/// Render a span as `file:offset` when it belongs to a module file
+fn describe_span(span: genesis::span::Span) -> String {
+    match parser::span_location(span.start) {
+        Some((path, offset)) => format!("{}:{}", path, offset),
+        None => format!("{}..{}", span.start, span.end),
     }
 }

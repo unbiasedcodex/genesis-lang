@@ -4418,14 +4418,32 @@ pub fn resolve_external_modules(program: &mut Program, base_path: &std::path::Pa
 
 /// Recursively resolve modules in a list of items
 /// max_depth prevents infinite recursion from circular module dependencies
+/// Records which file each span range belongs to, so that diagnostics can
+/// name the file a span came from.
+static SPAN_FILES: std::sync::Mutex<Vec<(usize, usize, String)>> =
+    std::sync::Mutex::new(Vec::new());
+
 /// Hand out a unique span range per source file.
 ///
 /// Files start well above any realistic root-file size, and each reserves its
 /// own length, so spans stay unique across the whole compilation.
-fn next_span_base(source_len: usize) -> usize {
+fn next_span_base(source_len: usize, path: &std::path::Path) -> usize {
     use std::sync::atomic::{AtomicUsize, Ordering};
     static NEXT_BASE: AtomicUsize = AtomicUsize::new(1_000_000_000);
-    NEXT_BASE.fetch_add(source_len + 1, Ordering::Relaxed)
+    let base = NEXT_BASE.fetch_add(source_len + 1, Ordering::Relaxed);
+    if let Ok(mut files) = SPAN_FILES.lock() {
+        files.push((base, source_len, path.display().to_string()));
+    }
+    base
+}
+
+/// Resolve a span position to the file it came from and the offset within it
+pub fn span_location(pos: usize) -> Option<(String, usize)> {
+    let files = SPAN_FILES.lock().ok()?;
+    files
+        .iter()
+        .find(|(base, len, _)| pos >= *base && pos <= base + len)
+        .map(|(base, _, path)| (path.clone(), pos - base))
 }
 
 fn resolve_modules_recursive(
@@ -4472,7 +4490,7 @@ fn resolve_modules_recursive(
                             // information is keyed by span, and every file is
                             // lexed from zero, so without a per-file base the
                             // types of same-offset expressions collide.
-                            let span_base = next_span_base(source.len());
+                            let span_base = next_span_base(source.len(), &mod_path);
                             let (mut mod_program, parse_errors) =
                                 parse_with_span_base(source, span_base);
                             errors.extend(parse_errors);
