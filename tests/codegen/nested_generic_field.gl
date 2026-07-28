@@ -1,0 +1,18 @@
+// Test: struct field whose type ends in nested generics (>>)
+// The image engine hit "struct has no field" for the field after one.
+
+struct Holder {
+    data: Vec<u8>,
+    palette: Option<Vec<u32>>,
+    tag: i64,
+}
+
+fn main() -> i64 {
+    let h = Holder {
+        data: Vec::new(),
+        palette: None,
+        tag: 7,
+    };
+
+    h.tag
+}

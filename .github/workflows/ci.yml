@@ -32,3 +32,19 @@ jobs:
 
       - name: Run tests
         run: cargo test --release
+
+      - name: Compile the .gl test programs
+        run: |
+          # tests/codegen holds regression programs; cargo test does not build
+          # them, so compile each one and fail on the first that breaks.
+          status=0
+          for f in tests/codegen/*.gl; do
+            if ./target/release/glc build "$f" --freestanding --emit-obj -o /tmp/t.o > /tmp/t.log 2>&1; then
+              echo "OK   $f"
+            else
+              echo "FAIL $f"
+              cat /tmp/t.log
+              status=1
+            fi
+          done
+          exit $status
