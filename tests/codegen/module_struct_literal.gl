@@ -1,0 +1,26 @@
+// Test: struct declared in a module, built from an impl in that module
+// The image engine reports "struct ImageBuffer has no field palette" for
+// exactly this shape, while the same code at top level compiles.
+
+mod inner {
+    pub struct Holder {
+        pub data: Vec<u8>,
+        pub palette: Option<Vec<u32>>,
+        pub tag: i64,
+    }
+
+    impl Holder {
+        pub fn new(tag: i64) -> Holder {
+            Holder {
+                data: Vec::new(),
+                palette: None,
+                tag: tag,
+            }
+        }
+    }
+}
+
+fn main() -> i64 {
+    let h = inner::Holder::new(7);
+    h.tag
+}
