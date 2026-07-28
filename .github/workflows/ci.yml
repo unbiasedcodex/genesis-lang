@@ -4,6 +4,9 @@ on:
   push:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 env:
   LLVM_SYS_180_PREFIX: /usr/lib/llvm-18
 
@@ -38,13 +41,27 @@ jobs:
           # tests/codegen holds regression programs; cargo test does not build
           # them, so compile each one and fail on the first that breaks.
           status=0
+          : > /tmp/gl-tests.log
           for f in tests/codegen/*.gl; do
             if ./target/release/glc build "$f" --freestanding --emit-obj -o /tmp/t.o > /tmp/t.log 2>&1; then
-              echo "OK   $f"
+              echo "OK   $f" | tee -a /tmp/gl-tests.log
             else
-              echo "FAIL $f"
-              cat /tmp/t.log
+              echo "FAIL $f" | tee -a /tmp/gl-tests.log
+              cat /tmp/t.log | tee -a /tmp/gl-tests.log
               status=1
             fi
           done
           exit $status
+
+      - name: Publish test logs to ci-logs branch
+        if: always()
+        run: |
+          mkdir -p /tmp/lang-logs
+          cp /tmp/gl-tests.log /tmp/lang-logs/ 2>/dev/null || true
+          cd /tmp/lang-logs
+          git init -b ci-logs -q
+          git config user.name "ci"
+          git config user.email "ci@localhost"
+          git add -A
+          git commit -q -m "lang test logs for run ${{ github.run_id }}"
+          git push -q --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" ci-logs
